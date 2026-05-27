@@ -35,18 +35,19 @@ in vec2 vTexPos;
 
 out vec4 fragColor;
 
-const float TILE_SIZE = 512.0;
+// Mercator → lnglat helper, mirrored from BitmapLayer's fragment
+// shader. We always set _imageCoordinateSystem='lnglat' against the
+// MapboxOverlay's Mercator viewport, so BitmapLayer sets
+// bitmap.coordinateConversion = -1 and only the inverse transform
+// runs — the forward (lnglat→Mercator) branch present upstream is
+// dead code under our usage and has been dropped.
+//
+// WORLD_SCALE mirrors BitmapLayer's hard-coded TILE_SIZE = 512.0:
+// deck.gl's Mercator common space is defined in 512-pixel tile units
+// (see @math.gl/web-mercator). If deck.gl ever changes that, this
+// constant needs to track it.
 const float PI = 3.1415926536;
-const float WORLD_SCALE = TILE_SIZE / PI / 2.0;
-
-vec2 lnglat_to_mercator(vec2 lnglat) {
-  float x = lnglat.x;
-  float y = clamp(lnglat.y, -89.9, 89.9);
-  return vec2(
-    radians(x) + PI,
-    PI + log(tan(PI * 0.25 + radians(y) * 0.5))
-  ) * WORLD_SCALE;
-}
+const float WORLD_SCALE = 512.0 / PI / 2.0;
 
 vec2 mercator_to_lnglat(vec2 xy) {
   xy /= WORLD_SCALE;
@@ -65,12 +66,13 @@ vec2 getUV(vec2 pos) {
 
 void main(void) {
   vec2 uv = vTexCoord;
+  // coordinateConversion = -1 when we render lnglat-bounded data on a
+  // Mercator viewport (our only case). Any other value means our usage
+  // assumption is violated; we still fall through to the linearly
+  // interpolated vTexCoord, which is BitmapLayer's default behavior.
   if (bitmap.coordinateConversion < -0.5) {
     vec2 lnglat = mercator_to_lnglat(vTexPos);
     uv = getUV(lnglat);
-  } else if (bitmap.coordinateConversion > 0.5) {
-    vec2 commonPos = lnglat_to_mercator(vTexPos);
-    uv = getUV(commonPos);
   }
   // BlueSky's grid is south-to-north (row 0 = southernmost lat), but
   // BitmapLayer's tex coords put y=0 at the top of the bounds (north).
