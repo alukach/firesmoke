@@ -58,6 +58,12 @@ export default function App() {
     setPlayback((p) => seekTo(p, position));
   }, []);
 
+  // Auto-play once the forecast metadata has loaded. Only fires on the
+  // loading→ready transition; pausing later keeps it paused.
+  useEffect(() => {
+    if (state.status === "ready") play();
+  }, [state.status, play]);
+
   if (state.status === "loading") {
     return <Centered>Loading forecast store…</Centered>;
   }
