@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { PALETTES, type PaletteId } from "./colormap.ts";
 import { Controls, type Speed } from "./Controls.tsx";
 import { ForecastMap } from "./ForecastMap.tsx";
 import { useForecast } from "./useForecast.ts";
@@ -41,6 +42,8 @@ export default function App() {
     originTime: performance.now(),
     originPosition: 0,
   });
+  const [paletteId, setPaletteId] = useState<PaletteId>("epa-aqi");
+  const palette = PALETTES[paletteId]!;
   // Always-fresh snapshot for non-React readers (Controls' 10 Hz ticker).
   const playbackRef = useRef(playback);
   playbackRef.current = playback;
@@ -121,6 +124,7 @@ export default function App() {
         peekFrame={state.peekFrame}
         framesVersion={state.framesVersion}
         playback={playback}
+        palette={palette}
       />
       <Controls
         meta={state.meta}
@@ -133,6 +137,9 @@ export default function App() {
         prefetchAll={state.prefetchAll}
         prefetchProgress={state.prefetchProgress}
         peekFrame={state.peekFrame}
+        palette={palette}
+        paletteId={paletteId}
+        onPaletteChange={setPaletteId}
       />
     </div>
   );

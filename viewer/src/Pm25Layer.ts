@@ -14,6 +14,7 @@ import type { BitmapLayerProps } from "@deck.gl/layers";
 import type { UpdateParameters } from "@deck.gl/core";
 import type { Texture } from "@luma.gl/core";
 import type { ShaderModule } from "@luma.gl/shadertools";
+import { PM_MAX } from "./colormap.ts";
 import type { Frame } from "./useForecast.ts";
 
 const FRAGMENT_SHADER = /* glsl */ `\
@@ -26,6 +27,7 @@ precision highp float;
 
 uniform sampler2D bitmapTexture;
 uniform sampler2D bitmapTextureB;
+uniform sampler2D colormapTexture;
 
 in vec2 vTexCoord;
 in vec2 vTexPos;
@@ -60,33 +62,6 @@ vec2 getUV(vec2 pos) {
   );
 }
 
-vec4 pm25Color(float pm25) {
-  vec3 c0 = vec3(0.0,   0.894, 0.0);
-  vec3 c1 = vec3(1.0,   1.0,   0.0);
-  vec3 c2 = vec3(1.0,   0.494, 0.0);
-  vec3 c3 = vec3(1.0,   0.0,   0.0);
-  vec3 c4 = vec3(0.561, 0.247, 0.592);
-  vec3 c5 = vec3(0.494, 0.0,   0.137);
-  vec3 c6 = vec3(0.196, 0.0,   0.059);
-
-  vec3 rgb;
-  if      (pm25 < 12.0)  rgb = mix(c0, c1, pm25 / 12.0);
-  else if (pm25 < 35.0)  rgb = mix(c1, c2, (pm25 - 12.0) / 23.0);
-  else if (pm25 < 55.0)  rgb = mix(c2, c3, (pm25 - 35.0) / 20.0);
-  else if (pm25 < 150.0) rgb = mix(c3, c4, (pm25 - 55.0) / 95.0);
-  else if (pm25 < 250.0) rgb = mix(c4, c5, (pm25 - 150.0) / 100.0);
-  else if (pm25 < 500.0) rgb = mix(c5, c6, (pm25 - 250.0) / 250.0);
-  else                   rgb = c6;
-
-  float alpha;
-  if (pm25 <= 0.1) {
-    alpha = 0.0;
-  } else {
-    alpha = clamp(0.157 + sqrt(min(1.0, pm25 / 75.0)) * 0.706, 0.0, 0.863);
-  }
-  return vec4(rgb, alpha);
-}
-
 void main(void) {
   vec2 uv = vTexCoord;
   if (bitmap.coordinateConversion < -0.5) {
@@ -104,7 +79,10 @@ void main(void) {
   float pm25B = texture(bitmapTextureB, dataUv).r;
   float pm25 = mix(pm25A, pm25B, pm25Blend.tMix);
 
-  vec4 c = pm25Color(pm25);
+  // Sample the colormap LUT (256x1 RGBA8). The alpha channel encodes the
+  // palette's threshold behavior (alpha=0 below the visible threshold).
+  float t = clamp(pm25 / pm25Blend.pmMax, 0.0, 1.0);
+  vec4 c = texture(colormapTexture, vec2(t, 0.5));
   fragColor = vec4(c.rgb, c.a * layer.opacity);
   if (fragColor.a < 0.001) discard;
 
@@ -116,17 +94,18 @@ void main(void) {
 const blendUniformBlock = /* glsl */ `\
 layout(std140) uniform pm25BlendUniforms {
   float tMix;
+  float pmMax;
 } pm25Blend;
 `;
 
-type BlendUniforms = { tMix: number };
-type BlendBindings = { bitmapTextureB: Texture };
+type BlendUniforms = { tMix: number; pmMax: number };
+type BlendBindings = { bitmapTextureB: Texture; colormapTexture: Texture };
 
 const pm25BlendModule: ShaderModule<BlendUniforms & BlendBindings, BlendUniforms> = {
   name: "pm25Blend",
   vs: blendUniformBlock,
   fs: blendUniformBlock,
-  uniformTypes: { tMix: "f32" },
+  uniformTypes: { tMix: "f32", pmMax: "f32" },
 };
 
 export type Pm25LayerProps = Omit<BitmapLayerProps, "image"> & {
@@ -148,13 +127,17 @@ export type Pm25LayerProps = Omit<BitmapLayerProps, "image"> & {
   originPosition: number;
   /** Used as a layer prop to force redraw when prefetch lands new frames. */
   framesVersion: number;
+  /** 256x1 RGBA8 LUT (1024 bytes) from `buildLut(palette)`. */
+  colormapLut: Uint8Array;
 };
 
 type Pm25LayerState = {
   dataTexture?: Texture;
   dataTextureB?: Texture;
+  colormapTexture?: Texture;
   lastUploadedA?: Frame;
   lastUploadedB?: Frame;
+  lastUploadedLut?: Uint8Array;
 };
 
 export class Pm25Layer extends BitmapLayer<Pm25LayerProps> {
@@ -170,6 +153,7 @@ export class Pm25Layer extends BitmapLayer<Pm25LayerProps> {
     originTime: { type: "number", value: 0 },
     originPosition: { type: "number", value: 0 },
     framesVersion: { type: "number", value: 0 },
+    colormapLut: { type: "object", value: new Uint8Array(256 * 4), async: false },
   };
 
   declare state: BitmapLayer["state"] & Pm25LayerState;
@@ -264,9 +248,15 @@ export class Pm25Layer extends BitmapLayer<Pm25LayerProps> {
       this._uploadTexture("dataTextureB", frameBResolved.data);
       this.setState({ lastUploadedB: frameBResolved });
     }
+    if (this.props.colormapLut !== this.state.lastUploadedLut) {
+      this._uploadColormap(this.props.colormapLut);
+      this.setState({ lastUploadedLut: this.props.colormapLut });
+    }
 
     const dataTexture = this.state.dataTexture!;
     const dataTextureB = this.state.dataTextureB ?? dataTexture;
+    const colormapTexture = this.state.colormapTexture;
+    if (!colormapTexture) return;
     const effectiveTMix = this.state.dataTextureB ? tMix : 0;
 
     model.shaderInputs.setProps({
@@ -284,7 +274,9 @@ export class Pm25Layer extends BitmapLayer<Pm25LayerProps> {
       },
       pm25Blend: {
         bitmapTextureB: dataTextureB,
+        colormapTexture,
         tMix: effectiveTMix,
+        pmMax: PM_MAX,
       },
     });
     model.draw(this.context.renderPass);
@@ -317,9 +309,29 @@ export class Pm25Layer extends BitmapLayer<Pm25LayerProps> {
     this.setState({ [key]: texture });
   }
 
+  private _uploadColormap(lut: Uint8Array) {
+    const { device } = this.context;
+    this.state.colormapTexture?.destroy();
+    const texture = device.createTexture({
+      width: 256,
+      height: 1,
+      format: "rgba8unorm",
+      data: lut,
+      // Linear filter smooths the palette ramp between LUT bins.
+      sampler: {
+        minFilter: "linear",
+        magFilter: "linear",
+        addressModeU: "clamp-to-edge",
+        addressModeV: "clamp-to-edge",
+      },
+    });
+    this.setState({ colormapTexture: texture });
+  }
+
   override finalizeState(context: Parameters<BitmapLayer["finalizeState"]>[0]) {
     this.state.dataTexture?.destroy();
     this.state.dataTextureB?.destroy();
+    this.state.colormapTexture?.destroy();
     super.finalizeState(context);
   }
 }

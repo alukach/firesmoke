@@ -5,6 +5,7 @@ import { useCallback, useMemo } from "react";
 import type { MapEvent } from "react-map-gl/maplibre";
 import { Map as MaplibreMap, useControl } from "react-map-gl/maplibre";
 import type { PlaybackState } from "./App.tsx";
+import { buildLut, type Palette } from "./colormap.ts";
 import { Pm25Layer } from "./Pm25Layer.ts";
 import type { ForecastMeta, Frame } from "./useForecast.ts";
 
@@ -52,16 +53,20 @@ type Props = {
   peekFrame: (idx: number) => Frame | null;
   framesVersion: number;
   playback: PlaybackState;
+  palette: Palette;
 };
 
-function DeckOverlay({ meta, peekFrame, framesVersion, playback }: Props) {
+function DeckOverlay({ meta, peekFrame, framesVersion, playback, palette }: Props) {
   const overlay = useControl(
     () => new MapboxOverlay({ interleaved: false, layers: [] }),
   );
 
-  // Build a fresh layer instance only when the playback config or frame cache
-  // version changes — NOT per animation tick. The layer drives its own
-  // tMix from time inside draw().
+  // Rebuild the LUT only when the palette changes.
+  const colormapLut = useMemo(() => buildLut(palette), [palette]);
+
+  // Build a fresh layer instance only when the playback config, frame cache
+  // version, or palette changes — NOT per animation tick. The layer drives
+  // its own tMix from time inside draw().
   const layers = useMemo(() => {
     return [
       new Pm25Layer({
@@ -83,6 +88,7 @@ function DeckOverlay({ meta, peekFrame, framesVersion, playback }: Props) {
         originTime: playback.originTime,
         originPosition: playback.originPosition,
         framesVersion,
+        colormapLut,
       }),
     ];
   }, [
@@ -99,6 +105,7 @@ function DeckOverlay({ meta, peekFrame, framesVersion, playback }: Props) {
     playback.speed,
     playback.originTime,
     playback.originPosition,
+    colormapLut,
   ]);
 
   overlay.setProps({ layers });

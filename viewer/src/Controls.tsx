@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { currentPosition, type PlaybackState } from "./App.tsx";
-import { LEGEND } from "./colormap.ts";
+import { PALETTES, type Palette, type PaletteId } from "./colormap.ts";
 import type { ForecastMeta, Frame, PrefetchProgress } from "./useForecast.ts";
 
 const SPEEDS = [0.5, 1, 2, 4, 8, 16] as const;
@@ -36,6 +36,9 @@ type Props = {
   prefetchAll: () => Promise<void>;
   prefetchProgress: PrefetchProgress;
   peekFrame: (idx: number) => Frame | null;
+  palette: Palette;
+  paletteId: PaletteId;
+  onPaletteChange: (id: PaletteId) => void;
 };
 
 export function Controls({
@@ -49,6 +52,9 @@ export function Controls({
   prefetchAll,
   prefetchProgress,
   peekFrame,
+  palette,
+  paletteId,
+  onPaletteChange,
 }: Props) {
   const N = meta.validTimes.length;
   // The displayed slider/readout position. Only updated by the 10Hz ticker
@@ -185,7 +191,8 @@ export function Controls({
           label="Max PM2.5"
           value={maxPm25 !== null ? `${maxPm25.toFixed(1)} µg/m³` : "—"}
         />
-        <Legend />
+        <PalettePicker value={paletteId} onChange={onPaletteChange} />
+        <Legend palette={palette} />
       </div>
     </div>
   );
@@ -248,25 +255,87 @@ function SpeedPicker({ value, onChange }: { value: Speed; onChange: (s: Speed) =
   );
 }
 
-function Legend() {
+// Width of each swatch+label column in the legend. Wide enough to fit
+// 3-digit labels like "500" without overflowing.
+const SWATCH_WIDTH = 28;
+
+function Legend({ palette }: { palette: Palette }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
       <span style={{ opacity: 0.6, fontSize: 11 }}>PM2.5 (µg/m³)</span>
-      <div style={{ display: "flex", borderRadius: 3, overflow: "hidden", height: 14 }}>
-        {LEGEND.map((s) => (
-          <div
-            key={s.pm25}
-            title={`${s.pm25}+`}
-            style={{ width: 22, background: s.color }}
-          />
-        ))}
+      <div style={{ display: "flex", flexDirection: "column" }}>
+        <div style={{ display: "flex", borderRadius: 3, overflow: "hidden", height: 14 }}>
+          {palette.legend.map((s) => (
+            <div
+              key={s.pm25}
+              title={`${s.pm25}+`}
+              style={{ width: SWATCH_WIDTH, background: s.color }}
+            />
+          ))}
+        </div>
+        <div style={{ display: "flex", fontSize: 10, opacity: 0.7, marginTop: 2 }}>
+          {palette.legend.map((s) => (
+            <div key={s.pm25} style={{ width: SWATCH_WIDTH, textAlign: "center" }}>
+              {s.pm25}
+            </div>
+          ))}
+        </div>
       </div>
-      <div style={{ display: "flex", fontSize: 10, opacity: 0.7, gap: 0 }}>
-        {LEGEND.map((s) => (
-          <div key={s.pm25} style={{ width: 22, textAlign: "center" }}>
-            {s.pm25}
-          </div>
-        ))}
+    </div>
+  );
+}
+
+function PalettePicker({
+  value,
+  onChange,
+}: {
+  value: PaletteId;
+  onChange: (id: PaletteId) => void;
+}) {
+  return (
+    <div>
+      <div
+        style={{
+          opacity: 0.6,
+          fontSize: 11,
+          textTransform: "uppercase",
+          letterSpacing: 0.5,
+          marginBottom: 2,
+        }}
+      >
+        Palette
+      </div>
+      <div
+        style={{
+          display: "flex",
+          borderRadius: 4,
+          overflow: "hidden",
+          border: "1px solid rgba(255,255,255,0.15)",
+        }}
+        role="group"
+        aria-label="Colormap palette"
+      >
+        {(Object.keys(PALETTES) as PaletteId[]).map((id, i) => {
+          const active = id === value;
+          return (
+            <button
+              key={id}
+              onClick={() => onChange(id)}
+              style={{
+                background: active ? "#fff" : "transparent",
+                color: active ? "#000" : "#eee",
+                border: "none",
+                borderLeft: i === 0 ? "none" : "1px solid rgba(255,255,255,0.15)",
+                padding: "5px 10px",
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              {PALETTES[id]!.label}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
