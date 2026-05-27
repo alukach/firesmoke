@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { PALETTES, type PaletteId } from "./colormap.ts";
 import { Controls } from "./Controls.tsx";
 import { ForecastMap } from "./ForecastMap.tsx";
+import { InfoCard } from "./InfoCard.tsx";
 import { PaletteCard } from "./PaletteCard.tsx";
 import {
   initialPlayback,
@@ -105,6 +106,7 @@ export default function App() {
         paletteId={paletteId}
         onPaletteChange={setPaletteId}
       />
+      <InfoCard />
       {selectedPoint && (
         <PointChart
           point={selectedPoint}
