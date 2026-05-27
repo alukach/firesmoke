@@ -13,7 +13,6 @@
     "@deck.gl/core": "^9.1.13",
     "@deck.gl/layers": "^9.1.13",
     "@deck.gl/mapbox": "^9.1.13",
-    "@tmcw/togeojson": "^7.1.2",
     "maplibre-gl": "^5.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

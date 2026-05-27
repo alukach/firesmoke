@@ -1,6 +1,6 @@
 import type { Layer } from "@deck.gl/core";
 import { MapboxOverlay } from "@deck.gl/mapbox";
-import { GeoJsonLayer, ScatterplotLayer } from "@deck.gl/layers";
+import { ScatterplotLayer } from "@deck.gl/layers";
 import type { Map as MaplibreMapInstance } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useCallback, useEffect, useMemo } from "react";
@@ -10,7 +10,6 @@ import { buildLut, type Palette } from "./colormap.ts";
 import type { PlaybackState } from "./playback.ts";
 import type { SelectedPoint } from "./PointChart.tsx";
 import { Pm25Layer } from "./Pm25Layer.ts";
-import { useFireData } from "./useFireData.ts";
 import type { ForecastMeta, Frame } from "./useForecast.ts";
 
 const BASEMAP_STYLE =
@@ -78,10 +77,6 @@ function DeckOverlay({
   // Rebuild the LUT only when the palette changes.
   const colormapLut = useMemo(() => buildLut(palette), [palette]);
 
-  // Fetch BlueSky's published fire detections (input to the dispersion
-  // forecast). Silently no-ops if firesmoke.ca blocks CORS.
-  const fireData = useFireData();
-
   // Build a fresh layer instance only when the playback config, frame cache
   // version, palette, or selection changes — NOT per animation tick.
   const layers = useMemo(() => {
@@ -108,39 +103,6 @@ function DeckOverlay({
         colormapLut,
       }),
     ];
-    if (fireData.outlines) {
-      ls.push(
-        new GeoJsonLayer({
-          id: "fire-outlines",
-          data: fireData.outlines,
-          filled: true,
-          getFillColor: [255, 90, 30, 70],
-          stroked: true,
-          getLineColor: [255, 90, 30, 230],
-          lineWidthUnits: "pixels",
-          getLineWidth: 1.2,
-          pickable: false,
-          pointType: "circle",
-        }),
-      );
-    }
-    if (fireData.locations) {
-      ls.push(
-        new GeoJsonLayer({
-          id: "fire-locations",
-          data: fireData.locations,
-          pointType: "circle",
-          getPointRadius: 3,
-          pointRadiusUnits: "pixels",
-          getFillColor: [255, 60, 30, 220],
-          getLineColor: [40, 0, 0, 220],
-          stroked: true,
-          lineWidthUnits: "pixels",
-          getLineWidth: 0.8,
-          pickable: false,
-        }),
-      );
-    }
     if (selectedPoint) {
       ls.push(
         new ScatterplotLayer({
@@ -181,8 +143,6 @@ function DeckOverlay({
     playback.originPosition,
     colormapLut,
     selectedPoint,
-    fireData.outlines,
-    fireData.locations,
   ]);
 
   // Push layer updates as a side effect, not during render — render
