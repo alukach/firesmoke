@@ -233,17 +233,22 @@ export class Pm25Layer extends BitmapLayer<Pm25LayerProps> {
     // Upload textures only when the *frame identity* changes (not every
     // draw). The cache returns stable Frame references, so this naturally
     // amortizes texture creation to ~once per integer crossing.
+    //
+    // Mutate `this.state` directly — these are pure caches (texture
+    // identities + change-detection sentinels) that should not trigger
+    // deck.gl's updateState lifecycle. setState() inside draw() would
+    // schedule a redundant updateState the following tick.
     if (frameAResolved !== this.state.lastUploadedA) {
       this._uploadTexture("dataTexture", frameAResolved.data);
-      this.setState({ lastUploadedA: frameAResolved });
+      this.state.lastUploadedA = frameAResolved;
     }
     if (frameBResolved !== this.state.lastUploadedB) {
       this._uploadTexture("dataTextureB", frameBResolved.data);
-      this.setState({ lastUploadedB: frameBResolved });
+      this.state.lastUploadedB = frameBResolved;
     }
     if (this.props.colormapLut !== this.state.lastUploadedLut) {
       this._uploadColormap(this.props.colormapLut);
-      this.setState({ lastUploadedLut: this.props.colormapLut });
+      this.state.lastUploadedLut = this.props.colormapLut;
     }
 
     const dataTexture = this.state.dataTexture!;
@@ -299,7 +304,8 @@ export class Pm25Layer extends BitmapLayer<Pm25LayerProps> {
         addressModeV: "clamp-to-edge",
       },
     });
-    this.setState({ [key]: texture });
+    // Direct assignment — see comment in draw().
+    this.state[key] = texture;
   }
 
   private _uploadColormap(lut: Uint8Array) {
@@ -318,7 +324,7 @@ export class Pm25Layer extends BitmapLayer<Pm25LayerProps> {
         addressModeV: "clamp-to-edge",
       },
     });
-    this.setState({ colormapTexture: texture });
+    this.state.colormapTexture = texture;
   }
 
   override finalizeState(context: Parameters<BitmapLayer["finalizeState"]>[0]) {
