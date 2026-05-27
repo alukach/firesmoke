@@ -1,0 +1,46 @@
+name: Ingest BlueSky forecast
+
+# BlueSky publishes 4 runs/day at 15, 18, 00, 06 UTC. Run shortly after
+# each (with a buffer for publishing) so the store always reflects the
+# latest available forecast.
+on:
+  schedule:
+    - cron: "30 15,18,0,6 * * *"
+  workflow_dispatch:
+
+# Single-writer assumption: our crash-safe write ordering doesn't lock,
+# so don't let two ingests overlap.
+concurrency:
+  group: ingest
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Ingest current forecast into Source Cooperative
+        env:
+          # Source Cooperative S3-compatible credentials. Configure in
+          # repo Settings → Secrets and variables → Actions:
+          #   SOURCE_COOP_KEY_ID, SOURCE_COOP_SECRET
+          #   SOURCE_COOP_ENDPOINT  (e.g. https://data.source.coop)
+          #   SOURCE_COOP_REGION    (e.g. us-west-2)
+          #   SOURCE_COOP_STORE_URL (e.g. s3://us-west-2.opendata.source.coop/alukach/firesmoke/forecasts.zarr)
+          AWS_ACCESS_KEY_ID: ${{ secrets.SOURCE_COOP_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SOURCE_COOP_SECRET }}
+          AWS_ENDPOINT_URL_S3: ${{ secrets.SOURCE_COOP_ENDPOINT }}
+          AWS_REGION: ${{ secrets.SOURCE_COOP_REGION }}
+        run: uv run firesmoke-ingest current --store "${{ secrets.SOURCE_COOP_STORE_URL }}"
