@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { currentPosition, type PlaybackState } from "./App.tsx";
+import { currentPosition, SPEEDS, type PlaybackState, type Speed } from "./playback.ts";
 import type { ForecastMeta, Frame, PrefetchProgress } from "./useForecast.ts";
 import { useIsCompact } from "./useResponsive.ts";
 
-const SPEEDS = [0.5, 1, 2, 4, 8, 16] as const;
-export type Speed = (typeof SPEEDS)[number];
+// Re-export so legacy import paths (Controls.tsx → Speed) keep working
+// without touching every caller in this commit.
+export type { Speed };
 
 // How often to update the slider position + readouts while playing.
 // Decoupled from the GPU animation rate so the textual UI doesn't churn React

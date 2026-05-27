@@ -14,8 +14,8 @@ import type { BitmapLayerProps } from "@deck.gl/layers";
 import type { UpdateParameters } from "@deck.gl/core";
 import type { Texture } from "@luma.gl/core";
 import type { ShaderModule } from "@luma.gl/shadertools";
-import type { PlaybackState } from "./App.tsx";
 import { PM_MAX } from "./colormap.ts";
+import type { PlaybackState } from "./playback.ts";
 import type { Frame } from "./useForecast.ts";
 
 const FRAGMENT_SHADER = /* glsl */ `\

@@ -1,8 +1,17 @@
 import { useCallback, useRef, useState } from "react";
 import { PALETTES, type PaletteId } from "./colormap.ts";
-import { Controls, type Speed } from "./Controls.tsx";
+import { Controls } from "./Controls.tsx";
 import { ForecastMap } from "./ForecastMap.tsx";
 import { PaletteCard } from "./PaletteCard.tsx";
+import {
+  initialPlayback,
+  pauseAt,
+  playOn,
+  seekTo,
+  withSpeed,
+  type PlaybackState,
+  type Speed,
+} from "./playback.ts";
 import { PointChart, type SelectedPoint } from "./PointChart.tsx";
 import { useForecast } from "./useForecast.ts";
 
@@ -12,92 +21,27 @@ const ZARR_URL =
   import.meta.env.VITE_ZARR_URL ??
   new URL("/forecasts.zarr", window.location.origin).toString();
 
-/** Snapshot used by both the layer (every draw) and the UI (10 Hz). */
-export type PlaybackState = {
-  playing: boolean;
-  speed: Speed;
-  /** performance.now() at the moment playback last started (or seeked). */
-  originTime: number;
-  /** Frame position [0, N) at originTime. */
-  originPosition: number;
-};
-
-/** Compute the current continuous playhead position from a PlaybackState. */
-export function currentPosition(p: PlaybackState, N: number): number {
-  if (N === 0) return 0;
-  if (!p.playing) {
-    let pos = p.originPosition % N;
-    if (pos < 0) pos += N;
-    return pos;
-  }
-  const dt = (performance.now() - p.originTime) / 1000;
-  let pos = (p.originPosition + dt * p.speed) % N;
-  if (pos < 0) pos += N;
-  return pos;
-}
-
 export default function App() {
   const state = useForecast(ZARR_URL);
-  const [playback, setPlayback] = useState<PlaybackState>({
-    playing: false,
-    speed: 4,
-    originTime: performance.now(),
-    originPosition: 0,
-  });
+  const [playback, setPlayback] = useState<PlaybackState>(initialPlayback);
   const [paletteId, setPaletteId] = useState<PaletteId>("epa-aqi");
   const palette = PALETTES[paletteId]!;
   const [selectedPoint, setSelectedPoint] = useState<SelectedPoint | null>(null);
-  // Always-fresh snapshot for non-React readers (Controls' 10 Hz ticker).
+  // Always-fresh snapshot for non-React readers (Controls' 10 Hz ticker
+  // and the Pm25Layer draw loop).
   const playbackRef = useRef(playback);
   playbackRef.current = playback;
 
   const N = state.status === "ready" ? state.meta.validTimes.length : 0;
 
-  const play = useCallback(() => {
-    setPlayback((p) => {
-      if (p.playing) return p;
-      return { ...p, playing: true, originTime: performance.now() };
-    });
-  }, []);
-
-  const pause = useCallback(() => {
-    setPlayback((p) => {
-      if (!p.playing) return p;
-      const dt = (performance.now() - p.originTime) / 1000;
-      const N_ = N;
-      const pos =
-        N_ > 0 ? ((p.originPosition + dt * p.speed) % N_ + N_) % N_ : 0;
-      return { ...p, playing: false, originPosition: pos, originTime: performance.now() };
-    });
-  }, [N]);
-
+  const play = useCallback(() => setPlayback(playOn), []);
+  const pause = useCallback(() => setPlayback((p) => pauseAt(p, N)), [N]);
   const setSpeed = useCallback(
-    (speed: Speed) => {
-      setPlayback((p) => {
-        if (p.speed === speed) return p;
-        // Re-anchor origin so the playhead doesn't jump when speed changes.
-        const dt = (performance.now() - p.originTime) / 1000;
-        const N_ = N;
-        const pos =
-          N_ > 0 ? ((p.originPosition + dt * p.speed) % N_ + N_) % N_ : 0;
-        return {
-          ...p,
-          speed,
-          originPosition: pos,
-          originTime: performance.now(),
-        };
-      });
-    },
+    (s: Speed) => setPlayback((p) => withSpeed(p, s, N)),
     [N],
   );
-
   const seek = useCallback((position: number) => {
-    setPlayback((p) => ({
-      ...p,
-      playing: false,
-      originPosition: position,
-      originTime: performance.now(),
-    }));
+    setPlayback((p) => seekTo(p, position));
   }, []);
 
   if (state.status === "loading") {

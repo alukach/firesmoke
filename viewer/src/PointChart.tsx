@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { currentPosition, type PlaybackState } from "./App.tsx";
 import { colorAt, type Palette } from "./colormap.ts";
+import { currentPosition, type PlaybackState } from "./playback.ts";
 import type { ForecastMeta, Frame } from "./useForecast.ts";
 import { useIsCompact, useViewportWidth } from "./useResponsive.ts";
 
