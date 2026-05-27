@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { colorAt, type Palette } from "./colormap.ts";
 import { currentPosition, type PlaybackState } from "./playback.ts";
 import type { ForecastMeta, Frame } from "./useForecast.ts";
@@ -67,7 +67,10 @@ export function PointChart({
   const innerH = HEIGHT - PAD.top - PAD.bottom;
 
   // Sample the time series at the nearest grid cell.
-  // Recompute when prefetch lands more frames (framesVersion bump).
+  // framesVersion bumps once per frame as prefetch streams in, so we
+  // defer it: the chart's existing bars stay rendered while React waits
+  // to process the new sample pass, instead of doing N work per arrival.
+  const deferredFramesVersion = useDeferredValue(framesVersion);
   const { series, inBounds } = useMemo(() => {
     const lonStep = (meta.lonMax - meta.lonMin) / Math.max(1, meta.width - 1);
     const latStep = (meta.latMax - meta.latMin) / Math.max(1, meta.height - 1);
@@ -82,9 +85,10 @@ export function PointChart({
       }
     }
     return { series: s, inBounds: ok };
-    // framesVersion is intentional: bumps as new frames land in the cache.
+    // deferredFramesVersion is intentional: bumps as new frames land in
+    // the cache (and tells React to re-sample).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [point, meta, peekFrame, framesVersion, N]);
+  }, [point, meta, peekFrame, deferredFramesVersion, N]);
 
   // Live scrubber position (separate state, throttled to 10Hz while playing).
   const [displayPos, setDisplayPos] = useState(() =>
