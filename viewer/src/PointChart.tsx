@@ -153,6 +153,9 @@ export function PointChart({
         fontSize: 12,
         boxShadow: "0 2px 6px rgba(0, 0, 0, 0.4)",
         pointerEvents: "auto",
+        // Stack explicitly above the map (and the smoke layer rendered
+        // by deck.gl's MapboxOverlay) regardless of DOM order.
+        zIndex: 10,
         display: "flex",
         flexDirection: "column",
         gap: 4,

@@ -28,6 +28,7 @@ export function PaletteCard({ palette, paletteId, onPaletteChange }: Props) {
         fontSize: 12,
         boxShadow: "0 2px 6px rgba(0, 0, 0, 0.4)",
         pointerEvents: "auto",
+        zIndex: 10,
         display: "flex",
         flexDirection: "column",
         gap: isCompact ? 6 : 8,
