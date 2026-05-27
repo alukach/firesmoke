@@ -167,20 +167,33 @@ export function useForecast(zarrUrl: string): State {
           const queue = Array.from({ length: total }, (_, i) => i).filter(
             (i) => !cache.has(i),
           );
-          let loaded = cache.size;
           const workerFn = async () => {
             while (queue.length > 0) {
               const i = queue.shift();
               if (i === undefined) return;
-              await getFrame(i);
-              loaded++;
-              setProgress({ loaded, total, inFlight: loaded < total });
+              try {
+                await getFrame(i);
+              } catch {
+                // Skip; the frame will retry naturally if peekFrame is
+                // called again for this index (cache check fails →
+                // getFrame is re-invoked). We still want the progress
+                // bar to advance so the UI doesn't appear stuck.
+              }
+              // Functional update — concurrent workers' setProgress calls
+              // would otherwise race on a closure-shared `loaded` counter.
+              setProgress((prev) => {
+                const next = prev.loaded + 1;
+                return { loaded: next, total, inFlight: next < total };
+              });
             }
           };
-          await Promise.all(
+          await Promise.allSettled(
             Array.from({ length: PREFETCH_CONCURRENCY }, workerFn),
           );
-          setProgress({ loaded: total, total, inFlight: false });
+          // Use the actual cache size — workerFn-driven loaded counter
+          // could over- or under-count if a frame got cached by a parallel
+          // getFrame call in flight.
+          setProgress({ loaded: cache.size, total, inFlight: false });
         };
 
         setProgress({ loaded: 0, total, inFlight: false });
