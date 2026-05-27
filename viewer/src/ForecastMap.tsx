@@ -3,7 +3,7 @@ import { MapboxOverlay } from "@deck.gl/mapbox";
 import { ScatterplotLayer } from "@deck.gl/layers";
 import type { Map as MaplibreMapInstance } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import type { MapEvent, MapLayerMouseEvent } from "react-map-gl/maplibre";
 import { Map as MaplibreMap, useControl } from "react-map-gl/maplibre";
 import type { PlaybackState } from "./App.tsx";
@@ -138,7 +138,13 @@ function DeckOverlay({
     selectedPoint,
   ]);
 
-  overlay.setProps({ layers });
+  // Push layer updates as a side effect, not during render — render
+  // bodies can run twice under StrictMode or be discarded mid-render
+  // under concurrent React, but the overlay mutation would still fire.
+  useEffect(() => {
+    overlay.setProps({ layers });
+  }, [overlay, layers]);
+
   return null;
 }
 
