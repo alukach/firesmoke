@@ -64,9 +64,26 @@ export function useForecast(zarrUrl: string): State {
       { resolve: (f: Frame) => void; reject: (e: Error) => void }
     >();
 
+    // Single message router. init-result resolves the init promise;
+    // load-result/error reach the pending map; unsolicited errors flip
+    // the React state to "error". Avoid two competing onmessage handlers
+    // — they used to race over which one resolved init.
+    let resolveInit: (m: InitMeta) => void = () => {};
+    let rejectInit: (e: Error) => void = () => {};
+    const initPromise = new Promise<InitMeta>((resolve, reject) => {
+      resolveInit = resolve;
+      rejectInit = reject;
+    });
+    let initSettled = false;
+
     worker.onmessage = (ev: MessageEvent<OutMsg>) => {
       const msg = ev.data;
-      if (msg.type === "load-result") {
+      if (msg.type === "init-result") {
+        if (!initSettled) {
+          initSettled = true;
+          resolveInit(msg.meta);
+        }
+      } else if (msg.type === "load-result") {
         const p = pending.get(msg.reqId);
         if (!p) return;
         pending.delete(msg.reqId);
@@ -82,24 +99,25 @@ export function useForecast(zarrUrl: string): State {
             pending.delete(msg.reqId);
             p.reject(new Error(msg.error));
           }
+        } else if (!initSettled) {
+          initSettled = true;
+          rejectInit(new Error(msg.error));
         } else if (!cancelled) {
           setState({ status: "error", error: msg.error });
         }
       }
     };
 
-    const initPromise = new Promise<InitMeta>((resolve, reject) => {
-      const handler = (ev: MessageEvent<OutMsg>) => {
-        if (ev.data.type === "init-result") {
-          worker.removeEventListener("message", handler);
-          resolve(ev.data.meta);
-        } else if (ev.data.type === "error") {
-          worker.removeEventListener("message", handler);
-          reject(new Error(ev.data.error));
-        }
-      };
-      worker.addEventListener("message", handler);
-    });
+    worker.onerror = (ev) => {
+      const message =
+        (ev as ErrorEvent).message || "Forecast worker crashed";
+      if (!initSettled) {
+        initSettled = true;
+        rejectInit(new Error(message));
+      } else if (!cancelled) {
+        setState({ status: "error", error: message });
+      }
+    };
 
     worker.postMessage({ type: "init", zarrUrl });
 
