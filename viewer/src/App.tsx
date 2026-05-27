@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { PALETTES, type PaletteId } from "./colormap.ts";
 import { Controls } from "./Controls.tsx";
 import { ForecastMap } from "./ForecastMap.tsx";
@@ -28,9 +28,13 @@ export default function App() {
   const palette = PALETTES[paletteId]!;
   const [selectedPoint, setSelectedPoint] = useState<SelectedPoint | null>(null);
   // Always-fresh snapshot for non-React readers (Controls' 10 Hz ticker
-  // and the Pm25Layer draw loop).
+  // and the Pm25Layer draw loop). Assign in an effect rather than during
+  // render so React 19's concurrent rendering can discard a render
+  // without leaving the ref pointing at state that never committed.
   const playbackRef = useRef(playback);
-  playbackRef.current = playback;
+  useEffect(() => {
+    playbackRef.current = playback;
+  }, [playback]);
 
   const N = state.status === "ready" ? state.meta.validTimes.length : 0;
 
