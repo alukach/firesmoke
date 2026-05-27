@@ -137,14 +137,35 @@ export function PointChart({
 
   const scrubX = PAD.left + (displayPos / Math.max(1, N)) * innerW;
 
-  // Click anywhere on the chart background to seek.
+  // Click + drag (mouse or touch) along the chart to scrub.
   const svgRef = useRef<SVGSVGElement | null>(null);
-  const handleSeek = (e: React.MouseEvent<SVGElement>) => {
+  const draggingRef = useRef(false);
+
+  const seekFromClientX = (clientX: number) => {
     const rect = svgRef.current?.getBoundingClientRect();
     if (!rect) return;
-    const x = e.clientX - rect.left - PAD.left;
+    const x = clientX - rect.left - PAD.left;
     const pos = Math.max(0, Math.min(N - 0.001, (x / innerW) * N));
     onSeek(pos);
+  };
+
+  const handlePointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    draggingRef.current = true;
+    (e.currentTarget as SVGSVGElement).setPointerCapture(e.pointerId);
+    seekFromClientX(e.clientX);
+  };
+  const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (!draggingRef.current) return;
+    seekFromClientX(e.clientX);
+  };
+  const stopDragging = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (!draggingRef.current) return;
+    draggingRef.current = false;
+    try {
+      (e.currentTarget as SVGSVGElement).releasePointerCapture(e.pointerId);
+    } catch {
+      /* pointer already released */
+    }
   };
 
   return (
@@ -207,8 +228,11 @@ export function PointChart({
           ref={svgRef}
           width={chartW}
           height={HEIGHT}
-          onClick={handleSeek}
-          style={{ cursor: "pointer", display: "block" }}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={stopDragging}
+          onPointerCancel={stopDragging}
+          style={{ cursor: "pointer", display: "block", touchAction: "none" }}
         >
           {/* baseline */}
           <line
