@@ -97,15 +97,20 @@ export default function App() {
     setPlayback((p) => seekTo(p, position));
   }, []);
 
-  // Auto-play once the prefetch has actually cached every frame, not
-  // just once the worker handshake completes. Starting playback before
-  // any frames are loaded shows an empty map for a few seconds.
-  // play()/playOn is idempotent on already-playing state, so the deps
-  // re-firing across progress ticks is harmless.
+  // Auto-play once the prefetch has actually cached every frame. The
+  // ref guard is essential: useForecast returns a fresh state object
+  // each render (it spreads progress into the ready state), so without
+  // it this effect would re-fire and re-trigger play() after the user
+  // hits pause, immediately undoing their click.
+  const autoPlayedRef = useRef(false);
   useEffect(() => {
+    if (autoPlayedRef.current) return;
     if (state.status !== "ready") return;
     const { loaded, total } = state.prefetchProgress;
-    if (total > 0 && loaded === total) play();
+    if (total > 0 && loaded === total) {
+      autoPlayedRef.current = true;
+      play();
+    }
   }, [state, play]);
 
   // Spacebar toggles play/pause, except when the user is typing in an
