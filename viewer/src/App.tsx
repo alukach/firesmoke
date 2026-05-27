@@ -84,7 +84,7 @@ export default function App() {
         meta={state.meta}
         peekFrame={state.peekFrame}
         framesVersion={state.framesVersion}
-        playbackRef={playbackRef}
+        playback={playback}
         palette={palette}
         selectedPoint={selectedPoint}
         onPointClick={setSelectedPoint}

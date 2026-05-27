@@ -12,8 +12,6 @@ import type { SelectedPoint } from "./PointChart.tsx";
 import { Pm25Layer } from "./Pm25Layer.ts";
 import type { ForecastMeta, Frame } from "./useForecast.ts";
 
-type PlaybackRef = { readonly current: PlaybackState };
-
 const BASEMAP_STYLE =
   "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
 
@@ -57,7 +55,7 @@ type Props = {
   meta: ForecastMeta;
   peekFrame: (idx: number) => Frame | null;
   framesVersion: number;
-  playbackRef: PlaybackRef;
+  playback: PlaybackState;
   palette: Palette;
   selectedPoint: SelectedPoint | null;
   onPointClick: (point: SelectedPoint | null) => void;
@@ -68,7 +66,7 @@ function DeckOverlay({
   meta,
   peekFrame,
   framesVersion,
-  playbackRef,
+  playback,
   palette,
   selectedPoint,
 }: Props) {
@@ -97,7 +95,10 @@ function DeckOverlay({
         _imageCoordinateSystem: "lnglat",
         opacity: 0.85,
         pickable: false,
-        playbackRef,
+        playing: playback.playing,
+        speed: playback.speed,
+        originTime: playback.originTime,
+        originPosition: playback.originPosition,
         framesVersion,
         colormapLut,
       }),
@@ -130,7 +131,16 @@ function DeckOverlay({
     meta.latMax,
     peekFrame,
     framesVersion,
-    playbackRef,
+    // Including the full playback (or its fields) in the deps means a
+    // play/pause/seek/speed change rebuilds the layer instance. deck.gl's
+    // state transfer preserves the GPU textures across same-id rebuilds,
+    // so the cost is ~just an object allocation. The benefit: deck.gl
+    // sees the prop change and schedules a draw, which then calls
+    // setNeedsRedraw() inside Pm25Layer.draw() to sustain the loop.
+    playback.playing,
+    playback.speed,
+    playback.originTime,
+    playback.originPosition,
     colormapLut,
     selectedPoint,
   ]);
