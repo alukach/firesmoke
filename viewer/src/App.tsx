@@ -2,6 +2,8 @@ import { useCallback, useRef, useState } from "react";
 import { PALETTES, type PaletteId } from "./colormap.ts";
 import { Controls, type Speed } from "./Controls.tsx";
 import { ForecastMap } from "./ForecastMap.tsx";
+import { PaletteCard } from "./PaletteCard.tsx";
+import { PointChart, type SelectedPoint } from "./PointChart.tsx";
 import { useForecast } from "./useForecast.ts";
 
 const QUERY_ZARR = new URLSearchParams(window.location.search).get("zarr");
@@ -44,6 +46,7 @@ export default function App() {
   });
   const [paletteId, setPaletteId] = useState<PaletteId>("epa-aqi");
   const palette = PALETTES[paletteId]!;
+  const [selectedPoint, setSelectedPoint] = useState<SelectedPoint | null>(null);
   // Always-fresh snapshot for non-React readers (Controls' 10 Hz ticker).
   const playbackRef = useRef(playback);
   playbackRef.current = playback;
@@ -125,7 +128,27 @@ export default function App() {
         framesVersion={state.framesVersion}
         playback={playback}
         palette={palette}
+        selectedPoint={selectedPoint}
+        onPointClick={setSelectedPoint}
       />
+      <PaletteCard
+        palette={palette}
+        paletteId={paletteId}
+        onPaletteChange={setPaletteId}
+      />
+      {selectedPoint && (
+        <PointChart
+          point={selectedPoint}
+          meta={state.meta}
+          peekFrame={state.peekFrame}
+          framesVersion={state.framesVersion}
+          palette={palette}
+          playback={playback}
+          playbackRef={playbackRef}
+          onSeek={seek}
+          onClose={() => setSelectedPoint(null)}
+        />
+      )}
       <Controls
         meta={state.meta}
         playback={playback}
@@ -137,9 +160,6 @@ export default function App() {
         prefetchAll={state.prefetchAll}
         prefetchProgress={state.prefetchProgress}
         peekFrame={state.peekFrame}
-        palette={palette}
-        paletteId={paletteId}
-        onPaletteChange={setPaletteId}
       />
     </div>
   );

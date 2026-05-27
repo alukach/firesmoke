@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { currentPosition, type PlaybackState } from "./App.tsx";
-import { PALETTES, type Palette, type PaletteId } from "./colormap.ts";
 import type { ForecastMeta, Frame, PrefetchProgress } from "./useForecast.ts";
 
 const SPEEDS = [0.5, 1, 2, 4, 8, 16] as const;
@@ -11,13 +10,32 @@ export type Speed = (typeof SPEEDS)[number];
 // at 60Hz.
 const DISPLAY_HZ = 10;
 
-function fmt(ts: number): string {
+// Reserved on the right edge so MapLibre's bottom-right attribution stays
+// visible behind the controls panel.
+const ATTRIBUTION_GUTTER = 140;
+
+function fmtForecast(ts: number): string {
   const d = new Date(ts);
   return d.toLocaleString(undefined, {
     timeZone: "UTC",
     weekday: "short",
     month: "short",
     day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZoneName: "short",
+  });
+}
+
+function fmtRun(ts: number): string {
+  const d = new Date(ts);
+  // Compact form for the run init time — it's secondary info.
+  return d.toLocaleString(undefined, {
+    timeZone: "UTC",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
@@ -36,9 +54,6 @@ type Props = {
   prefetchAll: () => Promise<void>;
   prefetchProgress: PrefetchProgress;
   peekFrame: (idx: number) => Frame | null;
-  palette: Palette;
-  paletteId: PaletteId;
-  onPaletteChange: (id: PaletteId) => void;
 };
 
 export function Controls({
@@ -52,13 +67,8 @@ export function Controls({
   prefetchAll,
   prefetchProgress,
   peekFrame,
-  palette,
-  paletteId,
-  onPaletteChange,
 }: Props) {
   const N = meta.validTimes.length;
-  // The displayed slider/readout position. Only updated by the 10Hz ticker
-  // while playing; otherwise reflects playback.originPosition directly.
   const [displayPos, setDisplayPos] = useState(() =>
     currentPosition(playback, N),
   );
@@ -91,8 +101,6 @@ export function Controls({
   const initTimeNow =
     tMix < 0.5 ? meta.initTimes[idxA]! : meta.initTimes[idxB]!;
 
-  // Read current frames sync-only for the max-PM2.5 readout (no React state
-  // for frame data).
   const frameA = peekFrame(idxA);
   const frameB = peekFrame(idxB);
   const maxPm25 =
@@ -115,7 +123,7 @@ export function Controls({
         bottom: 0,
         left: 0,
         right: 0,
-        padding: "12px 16px 16px",
+        padding: `12px ${ATTRIBUTION_GUTTER}px 16px 16px`,
         background:
           "linear-gradient(to top, rgba(0,0,0,0.85), rgba(0,0,0,0.55) 80%, transparent)",
         color: "#eee",
@@ -123,7 +131,14 @@ export function Controls({
         pointerEvents: "auto",
       }}
     >
-      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 8 }}>
+      <div
+        style={{
+          display: "flex",
+          gap: 12,
+          alignItems: "center",
+          marginBottom: 8,
+        }}
+      >
         <button
           onClick={handlePlayToggle}
           style={{
@@ -161,7 +176,7 @@ export function Controls({
               opacity: 0.6,
             }}
           >
-            <span>{fmt(meta.validTimes[0]!)}</span>
+            <span>{fmtForecast(meta.validTimes[0]!)}</span>
             <span>
               {(idxA + 1).toString().padStart(2, " ")} / {N}
               {prefetchProgress.inFlight && (
@@ -173,50 +188,55 @@ export function Controls({
                 </>
               )}
             </span>
-            <span>{fmt(meta.validTimes[N - 1]!)}</span>
+            <span>{fmtForecast(meta.validTimes[N - 1]!)}</span>
           </div>
         </div>
       </div>
+
+      {/* Headline row: prominent forecast time + max PM2.5; small dim
+          run-init line beneath. No "Valid" label — the big date stands on
+          its own. */}
       <div
         style={{
           display: "flex",
-          gap: 24,
-          alignItems: "center",
-          justifyContent: "space-between",
+          flexDirection: "column",
+          gap: 2,
+          alignItems: "baseline",
         }}
       >
-        <Readout label="Valid" value={fmt(validTimeNow)} bold />
-        <Readout label="From run" value={fmt(initTimeNow)} />
-        <Readout
-          label="Max PM2.5"
-          value={maxPm25 !== null ? `${maxPm25.toFixed(1)} µg/m³` : "—"}
-        />
-        <PalettePicker value={paletteId} onChange={onPaletteChange} />
-        <Legend palette={palette} />
+        <div
+          style={{
+            display: "flex",
+            alignItems: "baseline",
+            gap: 16,
+            flexWrap: "wrap",
+          }}
+        >
+          <span style={{ fontSize: 17, fontWeight: 600 }}>
+            {fmtForecast(validTimeNow)}
+          </span>
+          <span style={{ fontSize: 14, opacity: 0.85 }}>
+            Max PM2.5:{" "}
+            <span style={{ fontWeight: 600 }}>
+              {maxPm25 !== null ? `${maxPm25.toFixed(1)} µg/m³` : "—"}
+            </span>
+          </span>
+        </div>
+        <div style={{ fontSize: 11, opacity: 0.55 }}>
+          from {fmtRun(initTimeNow)} run
+        </div>
       </div>
     </div>
   );
 }
 
-function Readout({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
-  return (
-    <div>
-      <div
-        style={{
-          opacity: 0.6,
-          fontSize: 11,
-          textTransform: "uppercase",
-          letterSpacing: 0.5,
-        }}
-      >
-        {label}
-      </div>
-      <div style={{ fontWeight: bold ? 600 : 400, fontSize: 14 }}>{value}</div>
-    </div>
-  );
-}
-
-function SpeedPicker({ value, onChange }: { value: Speed; onChange: (s: Speed) => void }) {
+function SpeedPicker({
+  value,
+  onChange,
+}: {
+  value: Speed;
+  onChange: (s: Speed) => void;
+}) {
   return (
     <div
       style={{
@@ -240,7 +260,8 @@ function SpeedPicker({ value, onChange }: { value: Speed; onChange: (s: Speed) =
               background: active ? "#fff" : "transparent",
               color: active ? "#000" : "#eee",
               border: "none",
-              borderLeft: s === SPEEDS[0] ? "none" : "1px solid rgba(255,255,255,0.15)",
+              borderLeft:
+                s === SPEEDS[0] ? "none" : "1px solid rgba(255,255,255,0.15)",
               padding: "6px 10px",
               fontSize: 12,
               fontWeight: 600,
@@ -251,92 +272,6 @@ function SpeedPicker({ value, onChange }: { value: Speed; onChange: (s: Speed) =
           </button>
         );
       })}
-    </div>
-  );
-}
-
-// Width of each swatch+label column in the legend. Wide enough to fit
-// 3-digit labels like "500" without overflowing.
-const SWATCH_WIDTH = 28;
-
-function Legend({ palette }: { palette: Palette }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-      <span style={{ opacity: 0.6, fontSize: 11 }}>PM2.5 (µg/m³)</span>
-      <div style={{ display: "flex", flexDirection: "column" }}>
-        <div style={{ display: "flex", borderRadius: 3, overflow: "hidden", height: 14 }}>
-          {palette.legend.map((s) => (
-            <div
-              key={s.pm25}
-              title={`${s.pm25}+`}
-              style={{ width: SWATCH_WIDTH, background: s.color }}
-            />
-          ))}
-        </div>
-        <div style={{ display: "flex", fontSize: 10, opacity: 0.7, marginTop: 2 }}>
-          {palette.legend.map((s) => (
-            <div key={s.pm25} style={{ width: SWATCH_WIDTH, textAlign: "center" }}>
-              {s.pm25}
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PalettePicker({
-  value,
-  onChange,
-}: {
-  value: PaletteId;
-  onChange: (id: PaletteId) => void;
-}) {
-  return (
-    <div>
-      <div
-        style={{
-          opacity: 0.6,
-          fontSize: 11,
-          textTransform: "uppercase",
-          letterSpacing: 0.5,
-          marginBottom: 2,
-        }}
-      >
-        Palette
-      </div>
-      <div
-        style={{
-          display: "flex",
-          borderRadius: 4,
-          overflow: "hidden",
-          border: "1px solid rgba(255,255,255,0.15)",
-        }}
-        role="group"
-        aria-label="Colormap palette"
-      >
-        {(Object.keys(PALETTES) as PaletteId[]).map((id, i) => {
-          const active = id === value;
-          return (
-            <button
-              key={id}
-              onClick={() => onChange(id)}
-              style={{
-                background: active ? "#fff" : "transparent",
-                color: active ? "#000" : "#eee",
-                border: "none",
-                borderLeft: i === 0 ? "none" : "1px solid rgba(255,255,255,0.15)",
-                padding: "5px 10px",
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              {PALETTES[id]!.label}
-            </button>
-          );
-        })}
-      </div>
     </div>
   );
 }

@@ -115,3 +115,9 @@ export function buildLut(palette: Palette): Uint8Array {
   }
   return lut;
 }
+
+/** CSS rgba color for an arbitrary PM2.5 value. Mirrors the GPU LUT logic. */
+export function colorAt(palette: Palette, pm25: number): string {
+  const [r, g, b, a] = interpStops(palette.stops, pm25);
+  return `rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(3)})`;
+}

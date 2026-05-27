@@ -1,0 +1,277 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { currentPosition, type PlaybackState } from "./App.tsx";
+import { colorAt, type Palette } from "./colormap.ts";
+import type { ForecastMeta, Frame } from "./useForecast.ts";
+
+const WIDTH = 380;
+const HEIGHT = 130;
+const PAD = { top: 8, right: 10, bottom: 22, left: 10 };
+const INNER_W = WIDTH - PAD.left - PAD.right;
+const INNER_H = HEIGHT - PAD.top - PAD.bottom;
+const DISPLAY_HZ = 10;
+
+export type SelectedPoint = { lat: number; lon: number };
+
+type Props = {
+  point: SelectedPoint;
+  meta: ForecastMeta;
+  peekFrame: (idx: number) => Frame | null;
+  framesVersion: number;
+  palette: Palette;
+  playback: PlaybackState;
+  playbackRef: { readonly current: PlaybackState };
+  onSeek: (position: number) => void;
+  onClose: () => void;
+};
+
+function fmtCoord(lat: number, lon: number): string {
+  const ns = lat >= 0 ? "N" : "S";
+  const ew = lon >= 0 ? "E" : "W";
+  return `${Math.abs(lat).toFixed(2)}°${ns}, ${Math.abs(lon).toFixed(2)}°${ew}`;
+}
+
+function fmtTime(ts: number): string {
+  return new Date(ts).toLocaleString(undefined, {
+    timeZone: "UTC",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+export function PointChart({
+  point,
+  meta,
+  peekFrame,
+  framesVersion,
+  palette,
+  playback,
+  playbackRef,
+  onSeek,
+  onClose,
+}: Props) {
+  const N = meta.validTimes.length;
+
+  // Sample the time series at the nearest grid cell.
+  // Recompute when prefetch lands more frames (framesVersion bump).
+  const { series, inBounds } = useMemo(() => {
+    const lonStep = (meta.lonMax - meta.lonMin) / Math.max(1, meta.width - 1);
+    const latStep = (meta.latMax - meta.latMin) / Math.max(1, meta.height - 1);
+    const col = Math.round((point.lon - meta.lonMin) / lonStep);
+    const row = Math.round((point.lat - meta.latMin) / latStep);
+    const ok = col >= 0 && col < meta.width && row >= 0 && row < meta.height;
+    const s: (number | null)[] = new Array(N).fill(null);
+    if (ok) {
+      for (let i = 0; i < N; i++) {
+        const f = peekFrame(i);
+        if (f) s[i] = f.data[row * meta.width + col]!;
+      }
+    }
+    return { series: s, inBounds: ok };
+    // framesVersion is intentional: bumps as new frames land in the cache.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [point, meta, peekFrame, framesVersion, N]);
+
+  // Live scrubber position (separate state, throttled to 10Hz while playing).
+  const [displayPos, setDisplayPos] = useState(() =>
+    currentPosition(playback, N),
+  );
+  useEffect(() => {
+    if (!playback.playing) {
+      setDisplayPos(currentPosition(playback, N));
+      return;
+    }
+    const id = setInterval(() => {
+      setDisplayPos(currentPosition(playbackRef.current, N));
+    }, 1000 / DISPLAY_HZ);
+    return () => clearInterval(id);
+  }, [playback, playbackRef, N]);
+
+  const maxVal = useMemo(() => {
+    let m = 1; // floor so an all-zero series still draws an axis
+    for (const v of series) if (v !== null && v > m) m = v;
+    // Round up to a nice axis tick.
+    if (m <= 50) return Math.ceil(m / 10) * 10;
+    if (m <= 250) return Math.ceil(m / 25) * 25;
+    if (m <= 1000) return Math.ceil(m / 100) * 100;
+    return Math.ceil(m / 500) * 500;
+  }, [series]);
+
+  const barW = INNER_W / Math.max(1, N);
+
+  // PM2.5 at the scrubber (linearly interpolated between adjacent frames).
+  const scrubVal = useMemo(() => {
+    const i = Math.floor(displayPos);
+    const j = (i + 1) % N;
+    const t = displayPos - i;
+    const a = series[i];
+    const b = series[j];
+    if (a === null && b === null) return null;
+    if (a === null) return b;
+    if (b === null) return a;
+    return a * (1 - t) + b * t;
+  }, [displayPos, series, N]);
+
+  const scrubX = PAD.left + (displayPos / Math.max(1, N)) * INNER_W;
+
+  // Click anywhere on the chart background to seek.
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const handleSeek = (e: React.MouseEvent<SVGElement>) => {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const x = e.clientX - rect.left - PAD.left;
+    const pos = Math.max(0, Math.min(N - 0.001, (x / INNER_W) * N));
+    onSeek(pos);
+  };
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        top: 12,
+        left: 12,
+        padding: "10px 12px 8px",
+        background: "rgba(0, 0, 0, 0.78)",
+        color: "#eee",
+        borderRadius: 6,
+        fontSize: 12,
+        boxShadow: "0 2px 6px rgba(0, 0, 0, 0.4)",
+        pointerEvents: "auto",
+        display: "flex",
+        flexDirection: "column",
+        gap: 4,
+        width: WIDTH + 24,
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+        <div style={{ fontWeight: 600 }}>{fmtCoord(point.lat, point.lon)}</div>
+        <button
+          onClick={onClose}
+          title="Close"
+          aria-label="Close point chart"
+          style={{
+            background: "transparent",
+            color: "#eee",
+            border: "none",
+            cursor: "pointer",
+            fontSize: 16,
+            padding: 0,
+            lineHeight: 1,
+            opacity: 0.6,
+          }}
+        >
+          ×
+        </button>
+      </div>
+      <div style={{ fontSize: 11, opacity: 0.65, display: "flex", justifyContent: "space-between" }}>
+        <span>PM2.5 over forecast (µg/m³)</span>
+        <span>
+          now:{" "}
+          <span style={{ color: "#fff", fontWeight: 600 }}>
+            {scrubVal === null ? "—" : `${scrubVal.toFixed(1)}`}
+          </span>
+        </span>
+      </div>
+      {!inBounds ? (
+        <div style={{ padding: "16px 0", textAlign: "center", opacity: 0.7 }}>
+          Outside forecast domain
+        </div>
+      ) : (
+        <svg
+          ref={svgRef}
+          width={WIDTH}
+          height={HEIGHT}
+          onClick={handleSeek}
+          style={{ cursor: "pointer", display: "block" }}
+        >
+          {/* baseline */}
+          <line
+            x1={PAD.left}
+            x2={PAD.left + INNER_W}
+            y1={PAD.top + INNER_H}
+            y2={PAD.top + INNER_H}
+            stroke="rgba(255,255,255,0.2)"
+          />
+          {/* max-y tick */}
+          <text
+            x={PAD.left}
+            y={PAD.top + 8}
+            fontSize={9}
+            fill="rgba(255,255,255,0.5)"
+          >
+            {maxVal}
+          </text>
+          {/* bars */}
+          {series.map((v, i) => {
+            if (v === null) return null;
+            if (v < 0.1) return null;
+            const h = Math.max(1, (v / maxVal) * INNER_H);
+            const x = PAD.left + i * barW;
+            const y = PAD.top + INNER_H - h;
+            return (
+              <rect
+                key={i}
+                x={x}
+                y={y}
+                width={Math.max(1, barW - 0.5)}
+                height={h}
+                fill={colorAt(palette, v)}
+              />
+            );
+          })}
+          {/* scrubber */}
+          <line
+            x1={scrubX}
+            x2={scrubX}
+            y1={PAD.top}
+            y2={PAD.top + INNER_H}
+            stroke="#fff"
+            strokeWidth={1.5}
+            pointerEvents="none"
+          />
+          <circle
+            cx={scrubX}
+            cy={PAD.top}
+            r={3}
+            fill="#fff"
+            pointerEvents="none"
+          />
+          {/* x-axis labels: start / mid / end */}
+          {N >= 2 && (
+            <>
+              <text
+                x={PAD.left}
+                y={HEIGHT - 4}
+                fontSize={9}
+                fill="rgba(255,255,255,0.5)"
+                textAnchor="start"
+              >
+                {fmtTime(meta.validTimes[0]!)}
+              </text>
+              <text
+                x={PAD.left + INNER_W / 2}
+                y={HEIGHT - 4}
+                fontSize={9}
+                fill="rgba(255,255,255,0.5)"
+                textAnchor="middle"
+              >
+                {fmtTime(meta.validTimes[Math.floor(N / 2)]!)}
+              </text>
+              <text
+                x={PAD.left + INNER_W}
+                y={HEIGHT - 4}
+                fontSize={9}
+                fill="rgba(255,255,255,0.5)"
+                textAnchor="end"
+              >
+                {fmtTime(meta.validTimes[N - 1]!)}
+              </text>
+            </>
+          )}
+        </svg>
+      )}
+    </div>
+  );
+}

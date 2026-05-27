@@ -1,11 +1,14 @@
+import type { Layer } from "@deck.gl/core";
 import { MapboxOverlay } from "@deck.gl/mapbox";
+import { ScatterplotLayer } from "@deck.gl/layers";
 import type { Map as MaplibreMapInstance } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useCallback, useMemo } from "react";
-import type { MapEvent } from "react-map-gl/maplibre";
+import type { MapEvent, MapLayerMouseEvent } from "react-map-gl/maplibre";
 import { Map as MaplibreMap, useControl } from "react-map-gl/maplibre";
 import type { PlaybackState } from "./App.tsx";
 import { buildLut, type Palette } from "./colormap.ts";
+import type { SelectedPoint } from "./PointChart.tsx";
 import { Pm25Layer } from "./Pm25Layer.ts";
 import type { ForecastMeta, Frame } from "./useForecast.ts";
 
@@ -54,9 +57,18 @@ type Props = {
   framesVersion: number;
   playback: PlaybackState;
   palette: Palette;
+  selectedPoint: SelectedPoint | null;
+  onPointClick: (point: SelectedPoint | null) => void;
 };
 
-function DeckOverlay({ meta, peekFrame, framesVersion, playback, palette }: Props) {
+function DeckOverlay({
+  meta,
+  peekFrame,
+  framesVersion,
+  playback,
+  palette,
+  selectedPoint,
+}: Props) {
   const overlay = useControl(
     () => new MapboxOverlay({ interleaved: false, layers: [] }),
   );
@@ -65,10 +77,9 @@ function DeckOverlay({ meta, peekFrame, framesVersion, playback, palette }: Prop
   const colormapLut = useMemo(() => buildLut(palette), [palette]);
 
   // Build a fresh layer instance only when the playback config, frame cache
-  // version, or palette changes — NOT per animation tick. The layer drives
-  // its own tMix from time inside draw().
+  // version, palette, or selection changes — NOT per animation tick.
   const layers = useMemo(() => {
-    return [
+    const ls: Layer[] = [
       new Pm25Layer({
         id: "pm25-latest",
         peekFrame,
@@ -91,6 +102,24 @@ function DeckOverlay({ meta, peekFrame, framesVersion, playback, palette }: Prop
         colormapLut,
       }),
     ];
+    if (selectedPoint) {
+      ls.push(
+        new ScatterplotLayer({
+          id: "selected-point",
+          data: [selectedPoint],
+          getPosition: (d: SelectedPoint) => [d.lon, d.lat],
+          getRadius: 6,
+          radiusUnits: "pixels",
+          getFillColor: [255, 255, 255, 220],
+          getLineColor: [0, 0, 0, 255],
+          lineWidthUnits: "pixels",
+          getLineWidth: 1.5,
+          stroked: true,
+          pickable: false,
+        }),
+      );
+    }
+    return ls;
   }, [
     meta.validTimes.length,
     meta.width,
@@ -106,6 +135,7 @@ function DeckOverlay({ meta, peekFrame, framesVersion, playback, palette }: Prop
     playback.originTime,
     playback.originPosition,
     colormapLut,
+    selectedPoint,
   ]);
 
   overlay.setProps({ layers });
@@ -131,12 +161,24 @@ export function ForecastMap(props: Props) {
     addHillshade(ev.target as MaplibreMapInstance);
   }, []);
 
+  const handleClick = useCallback(
+    (ev: MapLayerMouseEvent) => {
+      const { lng, lat } = ev.lngLat;
+      // Clamp inside the data bounds so a single click outside the domain
+      // doesn't crash sampling; PointChart will render an "outside domain"
+      // message if the rounded grid cell is out of range.
+      props.onPointClick({ lat, lon: lng });
+    },
+    [props],
+  );
+
   return (
     <MaplibreMap
       initialViewState={center}
       mapStyle={BASEMAP_STYLE}
       style={{ width: "100%", height: "100%" }}
       onLoad={handleLoad}
+      onClick={handleClick}
     >
       <DeckOverlay {...props} />
     </MaplibreMap>
