@@ -239,10 +239,16 @@ def _open_or_create_store(store_path: Path, run_ds: xr.Dataset) -> zarr.Group:
 def _check_grid(root: zarr.Group, run_ds: xr.Dataset) -> None:
     saved_lat = root["lat"][:]
     saved_lon = root["lon"][:]
-    if (saved_lat.shape != run_ds["lat"].shape
-            or not np.allclose(saved_lat, run_ds["lat"].values)
-            or saved_lon.shape != run_ds["lon"].shape
-            or not np.allclose(saved_lon, run_ds["lon"].values)):
+    # Use a tight absolute tolerance: the grid is on integer-spaced
+    # 0.1° cell centers, so any cell that should match will match to
+    # well within 1e-9. np.allclose's default rtol=1e-5 would silently
+    # accept domains whose YORIG drifts by ~1e-3° (~100m at lat 80°).
+    new_lat = np.asarray(run_ds["lat"].values)
+    new_lon = np.asarray(run_ds["lon"].values)
+    if (saved_lat.shape != new_lat.shape
+            or not np.allclose(saved_lat, new_lat, rtol=0, atol=1e-9)
+            or saved_lon.shape != new_lon.shape
+            or not np.allclose(saved_lon, new_lon, rtol=0, atol=1e-9)):
         raise RuntimeError(
             "Grid in store does not match grid in this run. "
             "Multi-domain ingest in one store is out of scope."
