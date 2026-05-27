@@ -239,7 +239,16 @@ export function useForecast(zarrUrl: string): State {
     return () => {
       cancelled = true;
       worker.terminate();
+      // Reject pending getFrame promises so any awaiting consumer
+      // (PointChart sampling, in-flight prefetch) unblocks with an
+      // error rather than hanging forever.
+      const err = new Error("Forecast worker terminated");
+      for (const p of pending.values()) p.reject(err);
       pending.clear();
+      if (!initSettled) {
+        initSettled = true;
+        rejectInit(err);
+      }
     };
   }, [zarrUrl]);
 
