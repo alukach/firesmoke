@@ -62,11 +62,16 @@ export default function App() {
     setPlayback((p) => seekTo(p, position));
   }, []);
 
-  // Auto-play once the forecast metadata has loaded. Only fires on the
-  // loading→ready transition; pausing later keeps it paused.
+  // Auto-play once the prefetch has actually cached every frame, not
+  // just once the worker handshake completes. Starting playback before
+  // any frames are loaded shows an empty map for a few seconds.
+  // play()/playOn is idempotent on already-playing state, so the deps
+  // re-firing across progress ticks is harmless.
   useEffect(() => {
-    if (state.status === "ready") play();
-  }, [state.status, play]);
+    if (state.status !== "ready") return;
+    const { loaded, total } = state.prefetchProgress;
+    if (total > 0 && loaded === total) play();
+  }, [state, play]);
 
   if (state.status === "loading") {
     return <Centered>Loading forecast store…</Centered>;
