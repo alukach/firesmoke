@@ -1,8 +1,5 @@
 import { PALETTES, type Palette, type PaletteId } from "./colormap.ts";
-
-// Width of each swatch+label column in the legend. Wide enough to fit
-// 3-digit labels like "250" or "500" without overflowing.
-const SWATCH_WIDTH = 28;
+import { useIsCompact } from "./useResponsive.ts";
 
 type Props = {
   palette: Palette;
@@ -13,16 +10,18 @@ type Props = {
 /**
  * Floating top-right card with the palette picker and legend.
  * Kept out of the bottom controls bar so it doesn't overlap with
- * MapLibre's bottom-right attribution.
+ * MapLibre's bottom-right attribution. Shrinks on phones.
  */
 export function PaletteCard({ palette, paletteId, onPaletteChange }: Props) {
+  const isCompact = useIsCompact();
+  const swatchW = isCompact ? 20 : 28;
   return (
     <div
       style={{
         position: "absolute",
-        top: 12,
-        right: 12,
-        padding: "10px 12px",
+        top: isCompact ? 8 : 12,
+        right: isCompact ? 8 : 12,
+        padding: isCompact ? "8px 10px" : "10px 12px",
         background: "rgba(0, 0, 0, 0.78)",
         color: "#eee",
         borderRadius: 6,
@@ -31,11 +30,15 @@ export function PaletteCard({ palette, paletteId, onPaletteChange }: Props) {
         pointerEvents: "auto",
         display: "flex",
         flexDirection: "column",
-        gap: 8,
+        gap: isCompact ? 6 : 8,
       }}
     >
-      <PalettePicker value={paletteId} onChange={onPaletteChange} />
-      <Legend palette={palette} />
+      <PalettePicker
+        value={paletteId}
+        onChange={onPaletteChange}
+        compact={isCompact}
+      />
+      <Legend palette={palette} swatchW={swatchW} />
     </div>
   );
 }
@@ -43,9 +46,11 @@ export function PaletteCard({ palette, paletteId, onPaletteChange }: Props) {
 function PalettePicker({
   value,
   onChange,
+  compact,
 }: {
   value: PaletteId;
   onChange: (id: PaletteId) => void;
+  compact: boolean;
 }) {
   return (
     <div
@@ -69,7 +74,7 @@ function PalettePicker({
               color: active ? "#000" : "#eee",
               border: "none",
               borderLeft: i === 0 ? "none" : "1px solid rgba(255,255,255,0.15)",
-              padding: "5px 10px",
+              padding: compact ? "8px 10px" : "5px 10px",
               fontSize: 11,
               fontWeight: 600,
               cursor: "pointer",
@@ -84,7 +89,7 @@ function PalettePicker({
   );
 }
 
-function Legend({ palette }: { palette: Palette }) {
+function Legend({ palette, swatchW }: { palette: Palette; swatchW: number }) {
   return (
     <div>
       <div
@@ -111,7 +116,7 @@ function Legend({ palette }: { palette: Palette }) {
             <div
               key={s.pm25}
               title={`${s.pm25}+`}
-              style={{ width: SWATCH_WIDTH, background: s.color }}
+              style={{ width: swatchW, background: s.color }}
             />
           ))}
         </div>
@@ -126,7 +131,7 @@ function Legend({ palette }: { palette: Palette }) {
           {palette.legend.map((s) => (
             <div
               key={s.pm25}
-              style={{ width: SWATCH_WIDTH, textAlign: "center" }}
+              style={{ width: swatchW, textAlign: "center" }}
             >
               {s.pm25}
             </div>

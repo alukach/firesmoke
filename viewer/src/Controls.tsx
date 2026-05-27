@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { currentPosition, type PlaybackState } from "./App.tsx";
 import type { ForecastMeta, Frame, PrefetchProgress } from "./useForecast.ts";
+import { useIsCompact } from "./useResponsive.ts";
 
 const SPEEDS = [0.5, 1, 2, 4, 8, 16] as const;
 export type Speed = (typeof SPEEDS)[number];
@@ -68,6 +69,7 @@ export function Controls({
   prefetchProgress,
   peekFrame,
 }: Props) {
+  const isCompact = useIsCompact();
   const N = meta.validTimes.length;
   const [displayPos, setDisplayPos] = useState(() =>
     currentPosition(playback, N),
@@ -116,6 +118,70 @@ export function Controls({
     prefetchProgress.total > 0 &&
     prefetchProgress.loaded === prefetchProgress.total;
 
+  // On compact viewports MapLibre auto-collapses the attribution to a small
+  // "i" button so we don't need to reserve a wide gutter for it.
+  const gutter = isCompact ? 12 : ATTRIBUTION_GUTTER;
+  const headlineFs = isCompact ? 15 : 17;
+  const subFs = isCompact ? 13 : 14;
+
+  const slider = (
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
+      <div style={{ position: "relative" }}>
+        <input
+          type="range"
+          min={0}
+          max={Math.max(0, N - 1)}
+          step={0.01}
+          value={displayPos}
+          onChange={(e) => onSeek(Number(e.target.value))}
+          style={{ width: "100%" }}
+        />
+        <PrefetchBar pct={prefetchPct} done={prefetchDone} />
+      </div>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          fontSize: 11,
+          opacity: 0.6,
+        }}
+      >
+        <span>{fmtForecast(meta.validTimes[0]!)}</span>
+        <span>
+          {(idxA + 1).toString().padStart(2, " ")} / {N}
+          {prefetchProgress.inFlight && (
+            <>
+              {" · "}
+              <span style={{ color: "#7ec0ee" }}>
+                cached {prefetchProgress.loaded}/{prefetchProgress.total}
+              </span>
+            </>
+          )}
+        </span>
+        <span>{fmtForecast(meta.validTimes[N - 1]!)}</span>
+      </div>
+    </div>
+  );
+
+  const playButton = (
+    <button
+      onClick={handlePlayToggle}
+      style={{
+        background: "#fff",
+        color: "#000",
+        border: "none",
+        borderRadius: 4,
+        padding: isCompact ? "10px 14px" : "6px 12px",
+        fontWeight: 600,
+        cursor: "pointer",
+        minWidth: isCompact ? 80 : 64,
+        fontSize: isCompact ? 14 : 13,
+      }}
+    >
+      {playback.playing ? "⏸ Pause" : "▶ Play"}
+    </button>
+  );
+
   return (
     <div
       style={{
@@ -123,7 +189,7 @@ export function Controls({
         bottom: 0,
         left: 0,
         right: 0,
-        padding: `12px ${ATTRIBUTION_GUTTER}px 16px 16px`,
+        padding: `12px ${gutter}px ${isCompact ? 12 : 16}px 16px`,
         background:
           "linear-gradient(to top, rgba(0,0,0,0.85), rgba(0,0,0,0.55) 80%, transparent)",
         color: "#eee",
@@ -131,71 +197,39 @@ export function Controls({
         pointerEvents: "auto",
       }}
     >
-      <div
-        style={{
-          display: "flex",
-          gap: 12,
-          alignItems: "center",
-          marginBottom: 8,
-        }}
-      >
-        <button
-          onClick={handlePlayToggle}
+      {isCompact ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 8 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {playButton}
+            <SpeedPicker
+              value={playback.speed}
+              onChange={onSpeedChange}
+              compact={isCompact}
+            />
+          </div>
+          {slider}
+        </div>
+      ) : (
+        <div
           style={{
-            background: "#fff",
-            color: "#000",
-            border: "none",
-            borderRadius: 4,
-            padding: "6px 12px",
-            fontWeight: 600,
-            cursor: "pointer",
-            minWidth: 64,
+            display: "flex",
+            gap: 12,
+            alignItems: "center",
+            marginBottom: 8,
           }}
         >
-          {playback.playing ? "⏸ Pause" : "▶ Play"}
-        </button>
-        <SpeedPicker value={playback.speed} onChange={onSpeedChange} />
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
-          <div style={{ position: "relative" }}>
-            <input
-              type="range"
-              min={0}
-              max={Math.max(0, N - 1)}
-              step={0.01}
-              value={displayPos}
-              onChange={(e) => onSeek(Number(e.target.value))}
-              style={{ width: "100%" }}
-            />
-            <PrefetchBar pct={prefetchPct} done={prefetchDone} />
-          </div>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              fontSize: 11,
-              opacity: 0.6,
-            }}
-          >
-            <span>{fmtForecast(meta.validTimes[0]!)}</span>
-            <span>
-              {(idxA + 1).toString().padStart(2, " ")} / {N}
-              {prefetchProgress.inFlight && (
-                <>
-                  {" · "}
-                  <span style={{ color: "#7ec0ee" }}>
-                    cached {prefetchProgress.loaded}/{prefetchProgress.total}
-                  </span>
-                </>
-              )}
-            </span>
-            <span>{fmtForecast(meta.validTimes[N - 1]!)}</span>
-          </div>
+          {playButton}
+          <SpeedPicker
+            value={playback.speed}
+            onChange={onSpeedChange}
+            compact={isCompact}
+          />
+          {slider}
         </div>
-      </div>
+      )}
 
       {/* Headline row: prominent forecast time + max PM2.5; small dim
-          run-init line beneath. No "Valid" label — the big date stands on
-          its own. */}
+          run-init line beneath. */}
       <div
         style={{
           display: "flex",
@@ -208,14 +242,14 @@ export function Controls({
           style={{
             display: "flex",
             alignItems: "baseline",
-            gap: 16,
+            gap: isCompact ? 12 : 16,
             flexWrap: "wrap",
           }}
         >
-          <span style={{ fontSize: 17, fontWeight: 600 }}>
+          <span style={{ fontSize: headlineFs, fontWeight: 600 }}>
             {fmtForecast(validTimeNow)}
           </span>
-          <span style={{ fontSize: 14, opacity: 0.85 }}>
+          <span style={{ fontSize: subFs, opacity: 0.85 }}>
             Max PM2.5:{" "}
             <span style={{ fontWeight: 600 }}>
               {maxPm25 !== null ? `${maxPm25.toFixed(1)} µg/m³` : "—"}
@@ -233,9 +267,11 @@ export function Controls({
 function SpeedPicker({
   value,
   onChange,
+  compact,
 }: {
   value: Speed;
   onChange: (s: Speed) => void;
+  compact: boolean;
 }) {
   return (
     <div
@@ -262,8 +298,8 @@ function SpeedPicker({
               border: "none",
               borderLeft:
                 s === SPEEDS[0] ? "none" : "1px solid rgba(255,255,255,0.15)",
-              padding: "6px 10px",
-              fontSize: 12,
+              padding: compact ? "10px 12px" : "6px 10px",
+              fontSize: compact ? 13 : 12,
               fontWeight: 600,
               cursor: "pointer",
             }}

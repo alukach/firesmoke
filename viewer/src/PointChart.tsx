@@ -2,13 +2,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { currentPosition, type PlaybackState } from "./App.tsx";
 import { colorAt, type Palette } from "./colormap.ts";
 import type { ForecastMeta, Frame } from "./useForecast.ts";
+import { useIsCompact, useViewportWidth } from "./useResponsive.ts";
 
-const WIDTH = 380;
+const MAX_WIDTH = 380;
 const HEIGHT = 130;
 const PAD = { top: 8, right: 10, bottom: 22, left: 10 };
-const INNER_W = WIDTH - PAD.left - PAD.right;
-const INNER_H = HEIGHT - PAD.top - PAD.bottom;
 const DISPLAY_HZ = 10;
+// Reserve horizontal space at the edge of the viewport (margin + the
+// PaletteCard at top-right).
+const SIDE_MARGIN = 24;
+const PALETTE_CARD_RESERVE = 180;
 
 export type SelectedPoint = { lat: number; lon: number };
 
@@ -53,6 +56,15 @@ export function PointChart({
   onClose,
 }: Props) {
   const N = meta.validTimes.length;
+  const isCompact = useIsCompact();
+  const vw = useViewportWidth();
+  // On compact screens take (almost) the full viewport width; on desktop
+  // cap at MAX_WIDTH and leave room for the PaletteCard up-right.
+  const chartW = isCompact
+    ? Math.max(220, vw - SIDE_MARGIN * 2)
+    : Math.min(MAX_WIDTH, vw - SIDE_MARGIN * 2 - PALETTE_CARD_RESERVE);
+  const innerW = chartW - PAD.left - PAD.right;
+  const innerH = HEIGHT - PAD.top - PAD.bottom;
 
   // Sample the time series at the nearest grid cell.
   // Recompute when prefetch lands more frames (framesVersion bump).
@@ -99,7 +111,7 @@ export function PointChart({
     return Math.ceil(m / 500) * 500;
   }, [series]);
 
-  const barW = INNER_W / Math.max(1, N);
+  const barW = innerW / Math.max(1, N);
 
   // PM2.5 at the scrubber (linearly interpolated between adjacent frames).
   const scrubVal = useMemo(() => {
@@ -114,7 +126,7 @@ export function PointChart({
     return a * (1 - t) + b * t;
   }, [displayPos, series, N]);
 
-  const scrubX = PAD.left + (displayPos / Math.max(1, N)) * INNER_W;
+  const scrubX = PAD.left + (displayPos / Math.max(1, N)) * innerW;
 
   // Click anywhere on the chart background to seek.
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -122,7 +134,7 @@ export function PointChart({
     const rect = svgRef.current?.getBoundingClientRect();
     if (!rect) return;
     const x = e.clientX - rect.left - PAD.left;
-    const pos = Math.max(0, Math.min(N - 0.001, (x / INNER_W) * N));
+    const pos = Math.max(0, Math.min(N - 0.001, (x / innerW) * N));
     onSeek(pos);
   };
 
@@ -142,7 +154,7 @@ export function PointChart({
         display: "flex",
         flexDirection: "column",
         gap: 4,
-        width: WIDTH + 24,
+        width: chartW + 24,
       }}
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
@@ -181,7 +193,7 @@ export function PointChart({
       ) : (
         <svg
           ref={svgRef}
-          width={WIDTH}
+          width={chartW}
           height={HEIGHT}
           onClick={handleSeek}
           style={{ cursor: "pointer", display: "block" }}
@@ -189,9 +201,9 @@ export function PointChart({
           {/* baseline */}
           <line
             x1={PAD.left}
-            x2={PAD.left + INNER_W}
-            y1={PAD.top + INNER_H}
-            y2={PAD.top + INNER_H}
+            x2={PAD.left + innerW}
+            y1={PAD.top + innerH}
+            y2={PAD.top + innerH}
             stroke="rgba(255,255,255,0.2)"
           />
           {/* max-y tick */}
@@ -207,9 +219,9 @@ export function PointChart({
           {series.map((v, i) => {
             if (v === null) return null;
             if (v < 0.1) return null;
-            const h = Math.max(1, (v / maxVal) * INNER_H);
+            const h = Math.max(1, (v / maxVal) * innerH);
             const x = PAD.left + i * barW;
-            const y = PAD.top + INNER_H - h;
+            const y = PAD.top + innerH - h;
             return (
               <rect
                 key={i}
@@ -226,7 +238,7 @@ export function PointChart({
             x1={scrubX}
             x2={scrubX}
             y1={PAD.top}
-            y2={PAD.top + INNER_H}
+            y2={PAD.top + innerH}
             stroke="#fff"
             strokeWidth={1.5}
             pointerEvents="none"
@@ -251,7 +263,7 @@ export function PointChart({
                 {fmtTime(meta.validTimes[0]!)}
               </text>
               <text
-                x={PAD.left + INNER_W / 2}
+                x={PAD.left + innerW / 2}
                 y={HEIGHT - 4}
                 fontSize={9}
                 fill="rgba(255,255,255,0.5)"
@@ -260,7 +272,7 @@ export function PointChart({
                 {fmtTime(meta.validTimes[Math.floor(N / 2)]!)}
               </text>
               <text
-                x={PAD.left + INNER_W}
+                x={PAD.left + innerW}
                 y={HEIGHT - 4}
                 fontSize={9}
                 fill="rgba(255,255,255,0.5)"
