@@ -24,12 +24,40 @@ const ZARR_URL =
   import.meta.env.VITE_ZARR_URL ??
   new URL("/forecasts.zarr", window.location.origin).toString();
 
+/** Parse ?lat=&lon= from the URL into a SelectedPoint for sharing. */
+function readPointFromUrl(): SelectedPoint | null {
+  const p = new URLSearchParams(window.location.search);
+  const lat = parseFloat(p.get("lat") ?? "");
+  const lon = parseFloat(p.get("lon") ?? "");
+  return Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : null;
+}
+
 export default function App() {
   const state = useForecast(ZARR_URL);
   const [playback, setPlayback] = useState<PlaybackState>(initialPlayback);
   const [paletteId, setPaletteId] = useState<PaletteId>("firesmoke");
   const palette = PALETTES[paletteId]!;
-  const [selectedPoint, setSelectedPoint] = useState<SelectedPoint | null>(null);
+  const [selectedPoint, setSelectedPoint] = useState<SelectedPoint | null>(
+    readPointFromUrl,
+  );
+  // Captured once at mount so the map can fly to a URL-supplied point on
+  // first load without re-firing as the user clicks new points.
+  const initialPointRef = useRef<SelectedPoint | null>(selectedPoint);
+
+  // Persist the selected point in the URL so it's shareable.
+  // Use replaceState — every map click would otherwise create a history
+  // entry and clutter the back button.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (selectedPoint) {
+      url.searchParams.set("lat", selectedPoint.lat.toFixed(4));
+      url.searchParams.set("lon", selectedPoint.lon.toFixed(4));
+    } else {
+      url.searchParams.delete("lat");
+      url.searchParams.delete("lon");
+    }
+    window.history.replaceState(null, "", url.toString());
+  }, [selectedPoint]);
   // Always-fresh snapshot for non-React readers (Controls' 10 Hz ticker
   // and the Pm25Layer draw loop). Assign in an effect rather than during
   // render so React 19's concurrent rendering can discard a render
@@ -42,6 +70,13 @@ export default function App() {
   const mapRef = useRef<MaplibreMapInstance | null>(null);
   const handleMapLoad = useCallback((m: MaplibreMapInstance) => {
     mapRef.current = m;
+    // If the user landed on a ?lat=&lon= URL, recenter on it once the
+    // map is ready. Consume the ref so panning away later isn't undone.
+    const initial = initialPointRef.current;
+    if (initial) {
+      m.flyTo({ center: [initial.lon, initial.lat], zoom: 8, duration: 0 });
+      initialPointRef.current = null;
+    }
   }, []);
   const flyTo = useCallback((lat: number, lon: number, zoom?: number) => {
     mapRef.current?.flyTo({ center: [lon, lat], zoom: zoom ?? 8 });
