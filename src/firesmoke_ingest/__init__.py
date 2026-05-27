@@ -253,6 +253,13 @@ def _append_run(root: zarr.Group, run_ds: xr.Dataset, force: bool) -> bool:
     """Append the run to PM25_runs and update PM25_latest.
 
     Returns True if written, False if skipped as duplicate.
+
+    Write ordering is deliberate: data goes in *before* the coordinate
+    array is extended. The init_time coord is the dup-check key, so
+    bumping it last means a partial crash either leaves the store
+    unchanged from the dup-check's perspective (and the next ingest
+    redoes the work cleanly) or leaves a fully-written row that the
+    dup check now sees.
     """
     init_s = _ns_to_seconds_i64(run_ds["init_time"].values)
     init_arr = root["init_time"]
@@ -262,19 +269,34 @@ def _append_run(root: zarr.Group, run_ds: xr.Dataset, force: bool) -> bool:
         if not force:
             return False
         idx = int(np.where(existing == init_s)[0][0])
+        # Existing slot: just overwrite the data; init_time is already correct.
+        root["PM25_runs"][idx, :, :, :] = run_ds["PM25"].values
     else:
         idx = init_arr.shape[0]
+        runs = root["PM25_runs"]
+        # Data first: extend PM25_runs and fill the new row.
+        runs.resize((idx + 1, *runs.shape[1:]))
+        runs[idx, :, :, :] = run_ds["PM25"].values
+        # Commit: extend init_time and publish the new index. A crash
+        # before this line leaves an extra (NaN) row in PM25_runs that
+        # the next ingest of the same init_s will overwrite.
         init_arr.resize(idx + 1)
         init_arr[idx] = init_s
-        runs = root["PM25_runs"]
-        runs.resize((idx + 1, *runs.shape[1:]))
 
-    root["PM25_runs"][idx, :, :, :] = run_ds["PM25"].values
     _update_latest(root, init_s, run_ds)
     return True
 
 
 def _update_latest(root: zarr.Group, init_s: int, run_ds: xr.Dataset) -> None:
+    """Update PM25_latest with this run's frames where it wins.
+
+    Crash-ordering follows the same principle as _append_run: data
+    (PM25_latest + latest_init_time) is written before the valid_time
+    coord is published, so a partial crash leaves the store readable.
+
+    Note: this is not a full transaction. If you need bulletproof
+    consistency, run under icechunk or do an offline integrity pass.
+    """
     lead_hours = run_ds["lead_hour"].values
     pm25 = run_ds["PM25"].values  # (n_lead, lat, lon)
 
@@ -285,6 +307,7 @@ def _update_latest(root: zarr.Group, init_s: int, run_ds: xr.Dataset) -> None:
     latest_arr = root["PM25_latest"]
 
     existing_vt = vt_arr[:]
+    existing_li = li_arr[:]
     vt_to_idx: dict[int, int] = {int(v): i for i, v in enumerate(existing_vt)}
 
     new_vts: list[int] = []
@@ -294,7 +317,7 @@ def _update_latest(root: zarr.Group, init_s: int, run_ds: xr.Dataset) -> None:
     for src_i, vt in enumerate(valid_s.tolist()):
         if vt in vt_to_idx:
             dst_i = vt_to_idx[vt]
-            if init_s >= int(li_arr[dst_i]):
+            if init_s >= int(existing_li[dst_i]):
                 dst_indices.append(dst_i)
                 src_indices.append(src_i)
         else:
@@ -306,14 +329,23 @@ def _update_latest(root: zarr.Group, init_s: int, run_ds: xr.Dataset) -> None:
 
     if new_vts:
         new_total = len(existing_vt) + len(new_vts)
-        vt_arr.resize(new_total)
+        # Extend data + metadata first; valid_time stays at the old length
+        # until everything is written. Readers that iterate up to
+        # vt_arr.shape[0] won't see any half-filled slots.
         li_arr.resize(new_total)
         latest_arr.resize((new_total, *latest_arr.shape[1:]))
-        vt_arr[len(existing_vt):new_total] = np.array(new_vts, dtype="int64")
 
+    # Per-slot writes: data, then init metadata.
     for src_i, dst_i in zip(src_indices, dst_indices):
         latest_arr[dst_i, :, :] = pm25[src_i, :, :]
         li_arr[dst_i] = init_s
+
+    # Commit: publish the new valid_time entries. If we crash before this,
+    # a re-run of the same init will re-derive the same dst_indices and
+    # overwrite the (correct) data — eventually consistent.
+    if new_vts:
+        vt_arr.resize(len(existing_vt) + len(new_vts))
+        vt_arr[len(existing_vt):] = np.array(new_vts, dtype="int64")
 
 
 # --- fetch ---------------------------------------------------------------------
