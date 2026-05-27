@@ -61,6 +61,7 @@ type Props = {
   palette: Palette;
   selectedPoint: SelectedPoint | null;
   onPointClick: (point: SelectedPoint | null) => void;
+  onMapLoad?: (map: MaplibreMapInstance) => void;
 };
 
 function DeckOverlay({
@@ -145,6 +146,7 @@ function DeckOverlay({
 }
 
 export function ForecastMap(props: Props) {
+  const { onMapLoad } = props;
   const center = useMemo(
     () => ({
       longitude: (props.meta.lonMin + props.meta.lonMax) / 2,
@@ -159,9 +161,14 @@ export function ForecastMap(props: Props) {
     ],
   );
 
-  const handleLoad = useCallback((ev: MapEvent) => {
-    addHillshade(ev.target as MaplibreMapInstance);
-  }, []);
+  const handleLoad = useCallback(
+    (ev: MapEvent) => {
+      const map = ev.target as MaplibreMapInstance;
+      addHillshade(map);
+      onMapLoad?.(map);
+    },
+    [onMapLoad],
+  );
 
   const handleClick = useCallback(
     (ev: MapLayerMouseEvent) => {

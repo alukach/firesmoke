@@ -1,3 +1,4 @@
+import type { Map as MaplibreMapInstance } from "maplibre-gl";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PALETTES, type PaletteId } from "./colormap.ts";
 import { Controls } from "./Controls.tsx";
@@ -13,6 +14,7 @@ import {
   type Speed,
 } from "./playback.ts";
 import { PointChart, type SelectedPoint } from "./PointChart.tsx";
+import { SearchCard } from "./SearchCard.tsx";
 import { useForecast } from "./useForecast.ts";
 
 const QUERY_ZARR = new URLSearchParams(window.location.search).get("zarr");
@@ -35,6 +37,14 @@ export default function App() {
   useEffect(() => {
     playbackRef.current = playback;
   }, [playback]);
+
+  const mapRef = useRef<MaplibreMapInstance | null>(null);
+  const handleMapLoad = useCallback((m: MaplibreMapInstance) => {
+    mapRef.current = m;
+  }, []);
+  const flyTo = useCallback((lat: number, lon: number, zoom?: number) => {
+    mapRef.current?.flyTo({ center: [lon, lat], zoom: zoom ?? 8 });
+  }, []);
 
   const N = state.status === "ready" ? state.meta.validTimes.length : 0;
 
@@ -78,7 +88,9 @@ export default function App() {
         palette={palette}
         selectedPoint={selectedPoint}
         onPointClick={setSelectedPoint}
+        onMapLoad={handleMapLoad}
       />
+      <SearchCard flyTo={flyTo} bounds={state.meta} />
       <PaletteCard
         palette={palette}
         paletteId={paletteId}

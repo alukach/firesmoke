@@ -8,10 +8,13 @@ const MAX_WIDTH = 380;
 const HEIGHT = 130;
 const PAD = { top: 8, right: 10, bottom: 22, left: 10 };
 const DISPLAY_HZ = 10;
-// Reserve horizontal space at the edge of the viewport (margin + the
-// PaletteCard at top-right).
+// Reserve horizontal space at the edge of the viewport so the card never
+// touches the screen edge.
 const SIDE_MARGIN = 24;
-const PALETTE_CARD_RESERVE = 180;
+// Vertical clearance below the PaletteCard, which is pinned to the same
+// top-right corner.
+const PALETTE_CARD_CLEARANCE = 110;
+const PALETTE_CARD_CLEARANCE_COMPACT = 96;
 
 export type SelectedPoint = { lat: number; lon: number };
 
@@ -58,11 +61,11 @@ export function PointChart({
   const N = meta.validTimes.length;
   const isCompact = useIsCompact();
   const vw = useViewportWidth();
-  // On compact screens take (almost) the full viewport width; on desktop
-  // cap at MAX_WIDTH and leave room for the PaletteCard up-right.
+  // PointChart sits below the PaletteCard on the right edge, so it has the
+  // full right-side column to itself. Cap at MAX_WIDTH on desktop.
   const chartW = isCompact
     ? Math.max(220, vw - SIDE_MARGIN * 2)
-    : Math.min(MAX_WIDTH, vw - SIDE_MARGIN * 2 - PALETTE_CARD_RESERVE);
+    : Math.min(MAX_WIDTH, vw - SIDE_MARGIN * 2);
   const innerW = chartW - PAD.left - PAD.right;
   const innerH = HEIGHT - PAD.top - PAD.bottom;
 
@@ -148,8 +151,8 @@ export function PointChart({
     <div
       style={{
         position: "absolute",
-        top: 12,
-        left: 12,
+        top: isCompact ? PALETTE_CARD_CLEARANCE_COMPACT : PALETTE_CARD_CLEARANCE,
+        right: 12,
         padding: "10px 12px 8px",
         background: "rgba(0, 0, 0, 0.78)",
         color: "#eee",
