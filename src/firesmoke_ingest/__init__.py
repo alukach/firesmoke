@@ -25,6 +25,12 @@ TIME_UNITS = "seconds since 1970-01-01 00:00:00"
 TIME_CAL = "proleptic_gregorian"
 NS_PER_SEC = 1_000_000_000
 
+# Sentinel for "no data here yet" on int64 time arrays. Chosen so that:
+#  - it does not collide with any real Unix-second timestamp;
+#  - paired with CF attrs it decodes via xarray.open_zarr's _FillValue
+#    handling to NaT instead of a plausible 1970 date.
+TIME_FILL = np.iinfo(np.int64).min
+
 app = typer.Typer(help="Ingest BlueSky Canada dispersion forecasts into zarr-v3.")
 
 
@@ -177,20 +183,26 @@ def _open_or_create_store(store_path: Path, run_ds: xr.Dataset) -> zarr.Group:
     lead_a[:] = run_ds["lead_hour"].values
     lead_a.attrs.update({"units": "h", "long_name": "forecast lead time"})
 
-    # Growable coordinates
+    # Growable coordinates. fill_value=TIME_FILL (int64 min) so any slot
+    # that's been resize-extended but not yet written is unambiguously
+    # "missing" rather than decoding to a real-looking 1970 timestamp.
     it = root.create_array(
         "init_time", shape=(0,), dtype="int64", chunks=(64,),
         compressors=compressors, dimension_names=("init_time",),
+        fill_value=TIME_FILL,
     )
     it.attrs.update({"units": TIME_UNITS, "calendar": TIME_CAL,
-                     "long_name": "forecast initialization time"})
+                     "long_name": "forecast initialization time",
+                     "_FillValue": TIME_FILL})
 
     vt = root.create_array(
         "valid_time", shape=(0,), dtype="int64", chunks=(720,),
         compressors=compressors, dimension_names=("valid_time",),
+        fill_value=TIME_FILL,
     )
     vt.attrs.update({"units": TIME_UNITS, "calendar": TIME_CAL,
-                     "long_name": "forecast valid time"})
+                     "long_name": "forecast valid time",
+                     "_FillValue": TIME_FILL})
 
     # Data variables
     runs = root.create_array(
@@ -221,11 +233,12 @@ def _open_or_create_store(store_path: Path, run_ds: xr.Dataset) -> zarr.Group:
         dtype="int64",
         chunks=(720,),
         compressors=compressors,
-        fill_value=-1,
+        fill_value=TIME_FILL,
         dimension_names=("valid_time",),
     )
     li.attrs.update({"units": TIME_UNITS, "calendar": TIME_CAL,
-                     "long_name": "init_time of the run that currently wins PM25_latest at this valid_time"})
+                     "long_name": "init_time of the run that currently wins PM25_latest at this valid_time",
+                     "_FillValue": TIME_FILL})
 
     root.attrs.update({
         "created": datetime.now(timezone.utc).isoformat(),
