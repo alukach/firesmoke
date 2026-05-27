@@ -232,7 +232,13 @@ export function PointChart({
           onPointerMove={handlePointerMove}
           onPointerUp={stopDragging}
           onPointerCancel={stopDragging}
-          style={{ cursor: "pointer", display: "block", touchAction: "none" }}
+          style={{
+            cursor: "pointer",
+            display: "block",
+            touchAction: "none",
+            userSelect: "none",
+            WebkitUserSelect: "none",
+          }}
         >
           {/* baseline */}
           <line
