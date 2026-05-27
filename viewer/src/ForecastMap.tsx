@@ -71,6 +71,11 @@ function DeckOverlay({ meta, peekFrame, framesVersion, playback }: Props) {
         imageWidth: meta.width,
         imageHeight: meta.height,
         bounds: [meta.lonMin, meta.latMin, meta.lonMax, meta.latMax],
+        // Tell BitmapLayer the bounds are in lat/lon so it does the
+        // per-fragment Mercator→lnglat UV computation. Otherwise texCoords
+        // interpolate linearly in Mercator screen space and mis-sample
+        // by ~4° at our latitude range.
+        _imageCoordinateSystem: "lnglat",
         opacity: 0.85,
         pickable: false,
         playing: playback.playing,

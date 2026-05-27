@@ -5,7 +5,6 @@ See docs/plans/2026-05-26-firesmoke-ingest-design.md for the architecture.
 from __future__ import annotations
 
 import re
-import sys
 import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path

@@ -96,8 +96,12 @@ void main(void) {
     vec2 commonPos = lnglat_to_mercator(vTexPos);
     uv = getUV(commonPos);
   }
-  float pm25A = texture(bitmapTexture, uv).r;
-  float pm25B = texture(bitmapTextureB, uv).r;
+  // BlueSky's grid is south-to-north (row 0 = southernmost lat), but
+  // BitmapLayer's tex coords put y=0 at the top of the bounds (north).
+  // Flip Y when sampling so data lands at the right latitude.
+  vec2 dataUv = vec2(uv.x, 1.0 - uv.y);
+  float pm25A = texture(bitmapTexture, dataUv).r;
+  float pm25B = texture(bitmapTextureB, dataUv).r;
   float pm25 = mix(pm25A, pm25B, pm25Blend.tMix);
 
   vec4 c = pm25Color(pm25);
