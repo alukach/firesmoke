@@ -108,6 +108,29 @@ export default function App() {
     if (total > 0 && loaded === total) play();
   }, [state, play]);
 
+  // Spacebar toggles play/pause, except when the user is typing in an
+  // input (e.g. the city-search field) or other editable target.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.code !== "Space") return;
+      const t = e.target as HTMLElement | null;
+      if (
+        t &&
+        (t.tagName === "INPUT" ||
+          t.tagName === "TEXTAREA" ||
+          t.tagName === "SELECT" ||
+          t.isContentEditable)
+      ) {
+        return;
+      }
+      e.preventDefault();
+      if (playbackRef.current.playing) pause();
+      else play();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [play, pause]);
+
   const ready = state.status === "ready";
 
   return (
