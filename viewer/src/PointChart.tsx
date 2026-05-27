@@ -113,12 +113,14 @@ export function PointChart({
 
   const barW = innerW / Math.max(1, N);
 
-  // PM2.5 at the scrubber (linearly interpolated between adjacent frames).
+  // PM2.5 at the scrubber (linearly interpolated between adjacent frames,
+  // clamped at the wrap so we don't blend the last hour into the first).
   const scrubVal = useMemo(() => {
     const i = Math.floor(displayPos);
+    const a = series[i];
+    if (i === N - 1) return a ?? null;
     const j = (i + 1) % N;
     const t = displayPos - i;
-    const a = series[i];
     const b = series[j];
     if (a === null && b === null) return null;
     if (a === null) return b;

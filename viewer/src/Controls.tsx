@@ -97,11 +97,19 @@ export function Controls({
   const idxA = Math.min(Math.floor(displayPos), Math.max(0, N - 1));
   const idxB = (idxA + 1) % N;
   const tMix = displayPos - Math.floor(displayPos);
-  const validTimeNow =
-    meta.validTimes[idxA]! +
-    tMix * (meta.validTimes[idxB]! - meta.validTimes[idxA]!);
-  const initTimeNow =
-    tMix < 0.5 ? meta.initTimes[idxA]! : meta.initTimes[idxB]!;
+  // Clamp at the wrap (idxA = N-1, idxB = 0): the forecast doesn't wrap,
+  // so interpolating from validTimes[N-1] to validTimes[0] produces a
+  // ~2.5-day backwards jump in the readout. Hold the last frame's time.
+  const wrapping = idxA === N - 1;
+  const validTimeNow = wrapping
+    ? meta.validTimes[idxA]!
+    : meta.validTimes[idxA]! +
+      tMix * (meta.validTimes[idxB]! - meta.validTimes[idxA]!);
+  const initTimeNow = wrapping
+    ? meta.initTimes[idxA]!
+    : tMix < 0.5
+      ? meta.initTimes[idxA]!
+      : meta.initTimes[idxB]!;
 
   const frameA = peekFrame(idxA);
   const frameB = peekFrame(idxB);
