@@ -16,7 +16,7 @@ import xarray as xr
 import zarr
 from zarr.codecs import ZstdCodec
 
-DEFAULT_STORE = Path("./forecasts.zarr")
+DEFAULT_STORE = "./forecasts.zarr"
 URL_TEMPLATE = "https://firesmoke.ca/forecasts/{domain}/{run}/dispersion.nc"
 CURRENT_URL = "https://firesmoke.ca/forecasts/current/dispersion.nc"
 
@@ -149,12 +149,34 @@ def _ns_to_seconds_i64(ns: np.datetime64 | int) -> int:
     return ns // NS_PER_SEC
 
 
-def _open_or_create_store(store_path: Path, run_ds: xr.Dataset) -> zarr.Group:
-    if store_path.exists():
-        return zarr.open_group(str(store_path), mode="r+")
+def _make_store(store_arg: str) -> zarr.storage.StoreLike:
+    """Return a zarr Store object for either a local path or an s3:// URL.
 
-    store_path.parent.mkdir(parents=True, exist_ok=True)
-    root = zarr.open_group(str(store_path), mode="w")
+    For S3 we use FsspecStore + s3fs, which picks up credentials from the
+    usual AWS_* env vars (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY,
+    AWS_ENDPOINT_URL_S3, AWS_REGION). Source Cooperative gives you those
+    via their dashboard.
+    """
+    if store_arg.startswith("s3://"):
+        return zarr.storage.FsspecStore.from_url(store_arg)
+    p = Path(store_arg)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    return zarr.storage.LocalStore(str(p))
+
+
+def _open_or_create_store(store_arg: str, run_ds: xr.Dataset) -> zarr.Group:
+    """Open the store if it exists, else create it with the expected schema.
+
+    Idempotent on the structural arrays — re-running against an existing
+    store just opens it; this is how scheduled cron ingests work.
+    """
+    store = _make_store(store_arg)
+    # mode="a" = open if exists, create if not. Works for both LocalStore
+    # and remote S3-backed FsspecStore without an existence pre-check
+    # (which would be awkward over HTTP).
+    root = zarr.open_group(store, mode="a")
+    if "lat" in root:
+        return root
 
     n_lat = run_ds.sizes["lat"]
     n_lon = run_ds.sizes["lon"]
@@ -387,7 +409,12 @@ def ingest(
     run: str = typer.Argument(
         ..., help="Full dispersion.nc URL or <domain>/<YYYYMMDDHH>."
     ),
-    store: Path = typer.Option(DEFAULT_STORE, help="Zarr store path."),
+    store: str = typer.Option(
+        DEFAULT_STORE,
+        help="Zarr store path or s3:// URL. S3 reads creds from the "
+        "standard AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / "
+        "AWS_ENDPOINT_URL_S3 / AWS_REGION env vars.",
+    ),
     force: bool = typer.Option(False, "--force", help="Re-ingest even if already present."),
     keep: Path | None = typer.Option(
         None, "--keep", help="Save downloaded dispersion.nc here instead of a temp file."
