@@ -44,6 +44,9 @@ export default function App() {
   }, []);
   const flyTo = useCallback((lat: number, lon: number, zoom?: number) => {
     mapRef.current?.flyTo({ center: [lon, lat], zoom: zoom ?? 8 });
+    // Select the location too, so the PointChart opens for the searched
+    // city as if the user had clicked the map at that spot.
+    setSelectedPoint({ lat, lon });
   }, []);
 
   const N = state.status === "ready" ? state.meta.validTimes.length : 0;
