@@ -14,6 +14,7 @@ import type { BitmapLayerProps } from "@deck.gl/layers";
 import type { UpdateParameters } from "@deck.gl/core";
 import type { Texture } from "@luma.gl/core";
 import type { ShaderModule } from "@luma.gl/shadertools";
+import type { PlaybackState } from "./App.tsx";
 import { PM_MAX } from "./colormap.ts";
 import type { Frame } from "./useForecast.ts";
 
@@ -117,14 +118,9 @@ export type Pm25LayerProps = Omit<BitmapLayerProps, "image"> & {
   /** Frame dimensions in pixels (== meta.width / meta.height). */
   imageWidth: number;
   imageHeight: number;
-  /** Playback state. */
-  playing: boolean;
-  /** Forecast hours per real-time second. */
-  speed: number;
-  /** performance.now() snapshot from when playback last started (or seeked). */
-  originTime: number;
-  /** Frame position [0, frameCount) at originTime. */
-  originPosition: number;
+  /** Stable ref to the current playback state. Read fresh in draw() so
+   *  play/pause/seek/speed changes don't churn the layer instance. */
+  playbackRef: { readonly current: PlaybackState };
   /** Used as a layer prop to force redraw when prefetch lands new frames. */
   framesVersion: number;
   /** 256x1 RGBA8 LUT (1024 bytes) from `buildLut(palette)`. */
@@ -148,10 +144,7 @@ export class Pm25Layer extends BitmapLayer<Pm25LayerProps> {
     frameCount: { type: "number", value: 0 },
     imageWidth: { type: "number", value: 0 },
     imageHeight: { type: "number", value: 0 },
-    playing: { type: "boolean", value: false },
-    speed: { type: "number", value: 1 },
-    originTime: { type: "number", value: 0 },
-    originPosition: { type: "number", value: 0 },
+    playbackRef: { type: "object", value: { current: null } as unknown as Pm25LayerProps["playbackRef"], compare: false },
     framesVersion: { type: "number", value: 0 },
     colormapLut: { type: "object", value: new Uint8Array(256 * 4), async: false },
   };
@@ -194,10 +187,7 @@ export class Pm25Layer extends BitmapLayer<Pm25LayerProps> {
     const {
       peekFrame,
       frameCount,
-      playing,
-      speed,
-      originTime,
-      originPosition,
+      playbackRef,
       desaturate,
       transparentColor,
       tintColor,
@@ -206,14 +196,17 @@ export class Pm25Layer extends BitmapLayer<Pm25LayerProps> {
     if (shaderModuleProps?.picking?.isActive && disablePicking) return;
     if (!model || frameCount === 0) return;
 
-    // Derive current playhead from time.
+    // Derive current playhead from time. Read playback fresh from the ref
+    // so play/pause/seek/speed changes don't require a new layer instance.
+    const playback = playbackRef.current;
     let position: number;
-    if (playing) {
-      const dt = (performance.now() - originTime) / 1000;
-      position = (originPosition + dt * speed) % frameCount;
+    if (playback && playback.playing) {
+      const dt = (performance.now() - playback.originTime) / 1000;
+      position = (playback.originPosition + dt * playback.speed) % frameCount;
       if (position < 0) position += frameCount;
     } else {
-      position = originPosition % frameCount;
+      const op = playback?.originPosition ?? 0;
+      position = op % frameCount;
       if (position < 0) position += frameCount;
     }
 
@@ -229,7 +222,7 @@ export class Pm25Layer extends BitmapLayer<Pm25LayerProps> {
     const frameB = requestedB ?? this.state.lastUploadedB ?? frameA;
 
     if (!frameA) {
-      if (playing) this.setNeedsRedraw();
+      if (playback?.playing) this.setNeedsRedraw();
       return;
     }
     // After the early-return above, frameA is non-null, so frameB's
@@ -282,7 +275,7 @@ export class Pm25Layer extends BitmapLayer<Pm25LayerProps> {
     model.draw(this.context.renderPass);
 
     // Keep the deck.gl render loop running while playing.
-    if (playing) this.setNeedsRedraw();
+    if (playback?.playing) this.setNeedsRedraw();
   }
 
   private _uploadTexture(

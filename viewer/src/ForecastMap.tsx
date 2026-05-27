@@ -12,6 +12,8 @@ import type { SelectedPoint } from "./PointChart.tsx";
 import { Pm25Layer } from "./Pm25Layer.ts";
 import type { ForecastMeta, Frame } from "./useForecast.ts";
 
+type PlaybackRef = { readonly current: PlaybackState };
+
 const BASEMAP_STYLE =
   "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
 
@@ -55,7 +57,7 @@ type Props = {
   meta: ForecastMeta;
   peekFrame: (idx: number) => Frame | null;
   framesVersion: number;
-  playback: PlaybackState;
+  playbackRef: PlaybackRef;
   palette: Palette;
   selectedPoint: SelectedPoint | null;
   onPointClick: (point: SelectedPoint | null) => void;
@@ -65,7 +67,7 @@ function DeckOverlay({
   meta,
   peekFrame,
   framesVersion,
-  playback,
+  playbackRef,
   palette,
   selectedPoint,
 }: Props) {
@@ -94,10 +96,7 @@ function DeckOverlay({
         _imageCoordinateSystem: "lnglat",
         opacity: 0.85,
         pickable: false,
-        playing: playback.playing,
-        speed: playback.speed,
-        originTime: playback.originTime,
-        originPosition: playback.originPosition,
+        playbackRef,
         framesVersion,
         colormapLut,
       }),
@@ -130,10 +129,7 @@ function DeckOverlay({
     meta.latMax,
     peekFrame,
     framesVersion,
-    playback.playing,
-    playback.speed,
-    playback.originTime,
-    playback.originPosition,
+    playbackRef,
     colormapLut,
     selectedPoint,
   ]);
