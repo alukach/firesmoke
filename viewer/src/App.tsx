@@ -26,7 +26,7 @@ const ZARR_URL =
 export default function App() {
   const state = useForecast(ZARR_URL);
   const [playback, setPlayback] = useState<PlaybackState>(initialPlayback);
-  const [paletteId, setPaletteId] = useState<PaletteId>("epa-aqi");
+  const [paletteId, setPaletteId] = useState<PaletteId>("firesmoke");
   const palette = PALETTES[paletteId]!;
   const [selectedPoint, setSelectedPoint] = useState<SelectedPoint | null>(null);
   // Always-fresh snapshot for non-React readers (Controls' 10 Hz ticker
