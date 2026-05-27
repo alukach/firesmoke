@@ -8,6 +8,8 @@ BlueSky publishes IOAPI NetCDF (HYSPLIT output) four times a day with a 51-hour 
 firesmoke.ca/dispersion.nc  ──►  firesmoke-ingest  ──►  forecasts.zarr  ──►  viewer
 ```
 
+Zarr product available on Source Cooperative: https://source.coop/alukach/firesmoke
+
 ## Data
 
 Each run is a `PM25(TSTEP=51, LAY=1, ROW=381, COL=1081)` IOAPI NetCDF. The ingest decodes the grid and time from global attrs, drops the singleton `LAY`, and writes two variables into a single Zarr v3 group:
