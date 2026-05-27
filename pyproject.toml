@@ -1,0 +1,25 @@
+[project]
+name = "firesmoke-ingest"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Anthony Lukach", email = "anthonylukach@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "httpx>=0.28.1",
+    "netcdf4>=1.7.4",
+    "numcodecs>=0.16.5",
+    "numpy>=2.4.6",
+    "typer>=0.26.1",
+    "xarray>=2026.4.0",
+    "zarr>=3",
+]
+
+[project.scripts]
+firesmoke-ingest = "firesmoke_ingest:main"
+
+[build-system]
+requires = ["uv_build>=0.10.6,<0.11.0"]
+build-backend = "uv_build"
