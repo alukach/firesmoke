@@ -33,10 +33,29 @@ type OutMsg =
 let pm25Latest: zarr.Array<zarr.NumberDataType, zarr.Readable> | null = null;
 let initTimesAll: number[] = [];
 
+// Schemas the viewer knows how to read. Bump when the store layout
+// changes in an incompatible way; the ingest writes `schema_version`
+// onto the root group attrs (see firesmoke_ingest).
+const SUPPORTED_SCHEMA_VERSIONS = new Set([1]);
+
 async function handleInit(msg: InitMsg): Promise<void> {
   try {
     const store = new zarr.FetchStore(msg.zarrUrl);
     const group = await zarr.open(store, { kind: "group" });
+
+    const version = (group.attrs as { schema_version?: number }).schema_version;
+    if (version === undefined) {
+      throw new Error(
+        "Forecast store is missing `schema_version` attr — was it written by " +
+          "an older ingest? Re-ingest with the current firesmoke-ingest.",
+      );
+    }
+    if (!SUPPORTED_SCHEMA_VERSIONS.has(version)) {
+      throw new Error(
+        `Forecast store schema_version=${version} is not supported by this viewer ` +
+          `(supports: ${[...SUPPORTED_SCHEMA_VERSIONS].join(", ")}).`,
+      );
+    }
 
     const [latestArr, latArr, lonArr, vtArr, liArr] = await Promise.all([
       zarr.open(group.resolve("PM25_latest"), { kind: "array" }),
