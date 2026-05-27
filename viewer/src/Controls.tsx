@@ -16,10 +16,10 @@ const DISPLAY_HZ = 10;
 // visible behind the controls panel.
 const ATTRIBUTION_GUTTER = 140;
 
-function fmtForecast(ts: number): string {
+function fmtForecast(ts: number, utc: boolean): string {
   const d = new Date(ts);
   return d.toLocaleString(undefined, {
-    timeZone: "UTC",
+    timeZone: utc ? "UTC" : undefined,
     weekday: "short",
     month: "short",
     day: "numeric",
@@ -30,11 +30,11 @@ function fmtForecast(ts: number): string {
   });
 }
 
-function fmtRun(ts: number): string {
+function fmtRun(ts: number, utc: boolean): string {
   const d = new Date(ts);
   // Compact form for the run init time — it's secondary info.
   return d.toLocaleString(undefined, {
-    timeZone: "UTC",
+    timeZone: utc ? "UTC" : undefined,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -75,6 +75,10 @@ export function Controls({
   const [displayPos, setDisplayPos] = useState(() =>
     currentPosition(playback, N),
   );
+  // Default to the user's local timezone. Click the time readout to
+  // toggle to UTC (useful for cross-referencing the BlueSky run names).
+  const [useUtc, setUseUtc] = useState(false);
+  const toggleTz = () => setUseUtc((u) => !u);
 
   useEffect(() => {
     if (!playback.playing) {
@@ -155,7 +159,7 @@ export function Controls({
           opacity: 0.6,
         }}
       >
-        <span>{fmtForecast(meta.validTimes[0]!)}</span>
+        <span>{fmtForecast(meta.validTimes[0]!, useUtc)}</span>
         <span>
           {(idxA + 1).toString().padStart(2, " ")} / {N}
           {prefetchProgress.inFlight && (
@@ -167,7 +171,7 @@ export function Controls({
             </>
           )}
         </span>
-        <span>{fmtForecast(meta.validTimes[N - 1]!)}</span>
+        <span>{fmtForecast(meta.validTimes[N - 1]!, useUtc)}</span>
       </div>
     </div>
   );
@@ -255,8 +259,17 @@ export function Controls({
             flexWrap: "wrap",
           }}
         >
-          <span style={{ fontSize: headlineFs, fontWeight: 600 }}>
-            {fmtForecast(validTimeNow)}
+          <span
+            onClick={toggleTz}
+            title={`Click to switch to ${useUtc ? "local time" : "UTC"}`}
+            style={{
+              fontSize: headlineFs,
+              fontWeight: 600,
+              cursor: "pointer",
+              userSelect: "none",
+            }}
+          >
+            {fmtForecast(validTimeNow, useUtc)}
           </span>
           <span style={{ fontSize: subFs, opacity: 0.85 }}>
             Max PM2.5:{" "}
@@ -265,8 +278,11 @@ export function Controls({
             </span>
           </span>
         </div>
-        <div style={{ fontSize: 11, opacity: 0.55 }}>
-          from {fmtRun(initTimeNow)} run
+        <div
+          onClick={toggleTz}
+          style={{ fontSize: 11, opacity: 0.55, cursor: "pointer", userSelect: "none" }}
+        >
+          from {fmtRun(initTimeNow, useUtc)} run
         </div>
       </div>
     </div>
