@@ -14,8 +14,10 @@ concurrency:
   group: ingest
   cancel-in-progress: false
 
+# id-token: write is required for the OIDC handshake with AWS STS.
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   ingest:
@@ -24,23 +26,37 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: astral-sh/setup-uv@v3
+      # Exchange GitHub's OIDC token for short-lived AWS credentials. No
+      # long-lived AWS secrets stored in this repo. The configure-aws-credentials
+      # action sets AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_SESSION_TOKEN
+      # env vars for subsequent steps; s3fs (inside the ingest CLI) picks them
+      # up automatically.
+      #
+      # One-time setup in AWS:
+      #   1. Create the GitHub OIDC provider in IAM (issuer
+      #      `token.actions.githubusercontent.com`, audience `sts.amazonaws.com`).
+      #   2. Create an IAM role whose trust policy lets this repo's workflows
+      #      assume it (`sub: repo:alukach/firesmoke:*` or scoped to this
+      #      workflow / branch / environment).
+      #   3. Attach an S3 policy allowing PutObject/DeleteObject on the
+      #      forecast bucket prefix.
+      #
+      # Then set the following GitHub Actions VARIABLES (Settings → Secrets
+      # and variables → Actions → Variables, not Secrets):
+      #   AWS_ROLE_ARN     — arn:aws:iam::<account>:role/<role-name>
+      #   AWS_REGION       — e.g. us-west-2
+      #   FIRESMOKE_S3_URL — s3://<bucket>/forecasts.zarr
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
 
       - name: Install dependencies
         run: uv sync --frozen
 
-      - name: Ingest current forecast into Source Cooperative
-        env:
-          # Source Cooperative S3-compatible credentials. Configure in
-          # repo Settings → Secrets and variables → Actions:
-          #   SOURCE_COOP_KEY_ID, SOURCE_COOP_SECRET
-          #   SOURCE_COOP_ENDPOINT  (e.g. https://data.source.coop)
-          #   SOURCE_COOP_REGION    (e.g. us-west-2)
-          #   SOURCE_COOP_STORE_URL (e.g. s3://us-west-2.opendata.source.coop/alukach/firesmoke/forecasts.zarr)
-          AWS_ACCESS_KEY_ID: ${{ secrets.SOURCE_COOP_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.SOURCE_COOP_SECRET }}
-          AWS_ENDPOINT_URL_S3: ${{ secrets.SOURCE_COOP_ENDPOINT }}
-          AWS_REGION: ${{ secrets.SOURCE_COOP_REGION }}
-        run: uv run firesmoke-ingest current --store "${{ secrets.SOURCE_COOP_STORE_URL }}"
+      - name: Ingest current forecast
+        run: uv run firesmoke-ingest current --store "${{ vars.FIRESMOKE_S3_URL }}"
