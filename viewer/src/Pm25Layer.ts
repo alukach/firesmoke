@@ -290,41 +290,50 @@ export class Pm25Layer extends BitmapLayer<Pm25LayerProps> {
     const { imageWidth, imageHeight } = this.props;
     if (!imageWidth || !imageHeight) return;
     const { device } = this.context;
-    const old = this.state[key];
-    if (old) old.destroy();
-    const texture = device.createTexture({
-      width: imageWidth,
-      height: imageHeight,
-      format: "r32float",
-      data,
-      sampler: {
-        minFilter: "nearest",
-        magFilter: "nearest",
-        addressModeU: "clamp-to-edge",
-        addressModeV: "clamp-to-edge",
-      },
-    });
-    // Direct assignment — see comment in draw().
-    this.state[key] = texture;
+    let texture = this.state[key];
+    // Re-use the texture when dimensions haven't changed — avoids the
+    // GPU alloc/dealloc churn of destroy+create at every frame swap.
+    if (
+      !texture ||
+      texture.width !== imageWidth ||
+      texture.height !== imageHeight
+    ) {
+      texture?.destroy();
+      texture = device.createTexture({
+        width: imageWidth,
+        height: imageHeight,
+        format: "r32float",
+        sampler: {
+          minFilter: "nearest",
+          magFilter: "nearest",
+          addressModeU: "clamp-to-edge",
+          addressModeV: "clamp-to-edge",
+        },
+      });
+      this.state[key] = texture;
+    }
+    texture.copyImageData({ data });
   }
 
   private _uploadColormap(lut: Uint8Array) {
     const { device } = this.context;
-    this.state.colormapTexture?.destroy();
-    const texture = device.createTexture({
-      width: 256,
-      height: 1,
-      format: "rgba8unorm",
-      data: lut,
-      // Linear filter smooths the palette ramp between LUT bins.
-      sampler: {
-        minFilter: "linear",
-        magFilter: "linear",
-        addressModeU: "clamp-to-edge",
-        addressModeV: "clamp-to-edge",
-      },
-    });
-    this.state.colormapTexture = texture;
+    let texture = this.state.colormapTexture;
+    if (!texture) {
+      texture = device.createTexture({
+        width: 256,
+        height: 1,
+        format: "rgba8unorm",
+        // Linear filter smooths the palette ramp between LUT bins.
+        sampler: {
+          minFilter: "linear",
+          magFilter: "linear",
+          addressModeU: "clamp-to-edge",
+          addressModeV: "clamp-to-edge",
+        },
+      });
+      this.state.colormapTexture = texture;
+    }
+    texture.copyImageData({ data: lut });
   }
 
   override finalizeState(context: Parameters<BitmapLayer["finalizeState"]>[0]) {
