@@ -52,14 +52,28 @@ function addHillshade(map: MaplibreMapInstance) {
 }
 
 type Props = {
-  meta: ForecastMeta;
-  peekFrame: (idx: number) => Frame | null;
+  /** Null until the forecast metadata loads; map still renders the basemap. */
+  meta: ForecastMeta | null;
+  peekFrame: ((idx: number) => Frame | null) | null;
   framesVersion: number;
   playback: PlaybackState;
   palette: Palette;
   selectedPoint: SelectedPoint | null;
   onPointClick: (point: SelectedPoint | null) => void;
   onMapLoad?: (map: MaplibreMapInstance) => void;
+};
+
+// Fallback view centered on the BlueSky CONUS+Canada domain — used
+// while the real meta is still loading so the basemap can render.
+const FALLBACK_VIEW = { longitude: -106, latitude: 51, zoom: 3 };
+
+type OverlayProps = {
+  meta: ForecastMeta;
+  peekFrame: (idx: number) => Frame | null;
+  framesVersion: number;
+  playback: PlaybackState;
+  palette: Palette;
+  selectedPoint: SelectedPoint | null;
 };
 
 function DeckOverlay({
@@ -69,7 +83,7 @@ function DeckOverlay({
   playback,
   palette,
   selectedPoint,
-}: Props) {
+}: OverlayProps) {
   const overlay = useControl(
     () => new MapboxOverlay({ interleaved: false, layers: [] }),
   );
@@ -156,19 +170,23 @@ function DeckOverlay({
 }
 
 export function ForecastMap(props: Props) {
-  const { onMapLoad } = props;
+  const { onMapLoad, meta, peekFrame, onPointClick } = props;
+  // Center on the data domain if known, otherwise show the fallback
+  // continental view so the basemap can mount before the worker
+  // finishes the handshake.
   const center = useMemo(
-    () => ({
-      longitude: (props.meta.lonMin + props.meta.lonMax) / 2,
-      latitude: (props.meta.latMin + props.meta.latMax) / 2,
-      zoom: 3,
-    }),
-    [
-      props.meta.lonMin,
-      props.meta.lonMax,
-      props.meta.latMin,
-      props.meta.latMax,
-    ],
+    () =>
+      meta
+        ? {
+            longitude: (meta.lonMin + meta.lonMax) / 2,
+            latitude: (meta.latMin + meta.latMax) / 2,
+            zoom: 3,
+          }
+        : FALLBACK_VIEW,
+    // Intentionally only re-center on first meta arrival; later coord
+    // changes would yank the view away from a panned user.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
   );
 
   const handleLoad = useCallback(
@@ -183,12 +201,11 @@ export function ForecastMap(props: Props) {
   const handleClick = useCallback(
     (ev: MapLayerMouseEvent) => {
       const { lng, lat } = ev.lngLat;
-      // Clamp inside the data bounds so a single click outside the domain
-      // doesn't crash sampling; PointChart will render an "outside domain"
-      // message if the rounded grid cell is out of range.
-      props.onPointClick({ lat, lon: lng });
+      // Ignore clicks before the data is loaded — nothing to plot yet.
+      if (!meta || !peekFrame) return;
+      onPointClick({ lat, lon: lng });
     },
-    [props],
+    [meta, peekFrame, onPointClick],
   );
 
   return (
@@ -199,7 +216,16 @@ export function ForecastMap(props: Props) {
       onLoad={handleLoad}
       onClick={handleClick}
     >
-      <DeckOverlay {...props} />
+      {meta && peekFrame && (
+        <DeckOverlay
+          meta={meta}
+          peekFrame={peekFrame}
+          framesVersion={props.framesVersion}
+          playback={props.playback}
+          palette={props.palette}
+          selectedPoint={props.selectedPoint}
+        />
+      )}
     </MaplibreMap>
   );
 }

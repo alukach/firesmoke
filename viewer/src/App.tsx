@@ -73,75 +73,88 @@ export default function App() {
     if (total > 0 && loaded === total) play();
   }, [state, play]);
 
-  if (state.status === "loading") {
-    return <Centered>Loading forecast store…</Centered>;
-  }
-  if (state.status === "error") {
-    return (
-      <Centered>
-        <div style={{ maxWidth: 520, textAlign: "left" }}>
-          <h2 style={{ marginTop: 0 }}>Could not open forecast store</h2>
-          <p style={{ opacity: 0.8 }}>
-            Tried <code>{ZARR_URL}</code>. Have you run an ingest yet?
-          </p>
-          <pre style={{ background: "#222", padding: 12, borderRadius: 4, overflow: "auto", fontSize: 12 }}>
-            uv run firesmoke-ingest current --store ./forecasts.zarr
-          </pre>
-          <p style={{ opacity: 0.6, fontSize: 12 }}>Underlying error: {state.error}</p>
-        </div>
-      </Centered>
-    );
-  }
+  const ready = state.status === "ready";
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
+      {/* Always mount the map so basemap tiles load in parallel with the
+          worker handshake + prefetch, rather than waiting on them. */}
       <ForecastMap
-        meta={state.meta}
-        peekFrame={state.peekFrame}
-        framesVersion={state.framesVersion}
+        meta={ready ? state.meta : null}
+        peekFrame={ready ? state.peekFrame : null}
+        framesVersion={ready ? state.framesVersion : 0}
         playback={playback}
         palette={palette}
         selectedPoint={selectedPoint}
         onPointClick={setSelectedPoint}
         onMapLoad={handleMapLoad}
       />
-      <SearchCard flyTo={flyTo} bounds={state.meta} />
-      <PaletteCard
-        palette={palette}
-        paletteId={paletteId}
-        onPaletteChange={setPaletteId}
-      />
-      <InfoCard />
-      {selectedPoint && (
-        <PointChart
-          point={selectedPoint}
-          meta={state.meta}
-          peekFrame={state.peekFrame}
-          framesVersion={state.framesVersion}
-          palette={palette}
-          playback={playback}
-          playbackRef={playbackRef}
-          onSeek={seek}
-          onClose={() => setSelectedPoint(null)}
-        />
+
+      {state.status === "loading" && (
+        <Centered overlay>Loading forecast store…</Centered>
       )}
-      <Controls
-        meta={state.meta}
-        playback={playback}
-        playbackRef={playbackRef}
-        onPlay={play}
-        onPause={pause}
-        onSeek={seek}
-        onSpeedChange={setSpeed}
-        prefetchAll={state.prefetchAll}
-        prefetchProgress={state.prefetchProgress}
-        peekFrame={state.peekFrame}
-      />
+      {state.status === "error" && (
+        <Centered overlay>
+          <div style={{ maxWidth: 520, textAlign: "left" }}>
+            <h2 style={{ marginTop: 0 }}>Could not open forecast store</h2>
+            <p style={{ opacity: 0.8 }}>
+              Tried <code>{ZARR_URL}</code>. Have you run an ingest yet?
+            </p>
+            <pre style={{ background: "#222", padding: 12, borderRadius: 4, overflow: "auto", fontSize: 12 }}>
+              uv run firesmoke-ingest current --store ./forecasts.zarr
+            </pre>
+            <p style={{ opacity: 0.6, fontSize: 12 }}>Underlying error: {state.error}</p>
+          </div>
+        </Centered>
+      )}
+
+      {ready && (
+        <>
+          <SearchCard flyTo={flyTo} bounds={state.meta} />
+          <PaletteCard
+            palette={palette}
+            paletteId={paletteId}
+            onPaletteChange={setPaletteId}
+          />
+          <InfoCard />
+          {selectedPoint && (
+            <PointChart
+              point={selectedPoint}
+              meta={state.meta}
+              peekFrame={state.peekFrame}
+              framesVersion={state.framesVersion}
+              palette={palette}
+              playback={playback}
+              playbackRef={playbackRef}
+              onSeek={seek}
+              onClose={() => setSelectedPoint(null)}
+            />
+          )}
+          <Controls
+            meta={state.meta}
+            playback={playback}
+            playbackRef={playbackRef}
+            onPlay={play}
+            onPause={pause}
+            onSeek={seek}
+            onSpeedChange={setSpeed}
+            prefetchAll={state.prefetchAll}
+            prefetchProgress={state.prefetchProgress}
+            peekFrame={state.peekFrame}
+          />
+        </>
+      )}
     </div>
   );
 }
 
-function Centered({ children }: { children: React.ReactNode }) {
+function Centered({
+  children,
+  overlay,
+}: {
+  children: React.ReactNode;
+  overlay?: boolean;
+}) {
   return (
     <div
       style={{
@@ -151,6 +164,19 @@ function Centered({ children }: { children: React.ReactNode }) {
         width: "100%",
         height: "100%",
         textAlign: "center",
+        // When stacked on top of the map, dim the map and intercept
+        // pointer events so the loading/error message reads clearly.
+        ...(overlay
+          ? {
+              position: "absolute",
+              top: 0,
+              left: 0,
+              background: "rgba(17, 17, 17, 0.72)",
+              color: "#eee",
+              zIndex: 20,
+              pointerEvents: "auto",
+            }
+          : null),
       }}
     >
       {children}

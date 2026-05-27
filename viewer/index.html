@@ -4,6 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>BlueSky smoke forecast viewer</title>
+    <!-- Warm the connections we'll hit on first paint: basemap style +
+         tiles (CARTO), terrain DEM (AWS), and the hosted forecast store
+         (Source Cooperative). Saves ~1 RTT each for DNS+TLS. -->
+    <link rel="preconnect" href="https://basemaps.cartocdn.com" crossorigin />
+    <link rel="preconnect" href="https://a.basemaps.cartocdn.com" crossorigin />
+    <link rel="preconnect" href="https://b.basemaps.cartocdn.com" crossorigin />
+    <link rel="preconnect" href="https://c.basemaps.cartocdn.com" crossorigin />
+    <link rel="preconnect" href="https://d.basemaps.cartocdn.com" crossorigin />
+    <link rel="preconnect" href="https://elevation-tiles-prod.s3.amazonaws.com" crossorigin />
+    <link rel="preconnect" href="https://data.source.coop" crossorigin />
     <style>
       html, body, #root {
         margin: 0;
