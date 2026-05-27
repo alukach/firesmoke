@@ -267,15 +267,30 @@ export function Controls({
               fontWeight: 600,
               cursor: "pointer",
               userSelect: "none",
+              // Tabular-nums + min-width keeps the digit columns
+              // stable so the adjacent Max PM2.5 doesn't shift as the
+              // displayed time (or timezone abbreviation) changes width.
+              fontVariantNumeric: "tabular-nums",
+              display: "inline-block",
+              minWidth: isCompact ? undefined : "22ch",
             }}
           >
             {fmtForecast(validTimeNow, useUtc)}
           </span>
           <span style={{ fontSize: subFs, opacity: 0.85 }}>
             Max PM2.5:{" "}
-            <span style={{ fontWeight: 600 }}>
-              {maxPm25 !== null ? `${maxPm25.toFixed(1)} µg/m³` : "—"}
-            </span>
+            <span
+              style={{
+                fontWeight: 600,
+                fontVariantNumeric: "tabular-nums",
+                display: "inline-block",
+                minWidth: "5ch",
+                textAlign: "right",
+              }}
+            >
+              {maxPm25 !== null ? maxPm25.toFixed(1) : "—"}
+            </span>{" "}
+            µg/m³
           </span>
         </div>
         <div
