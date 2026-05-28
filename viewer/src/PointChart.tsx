@@ -47,6 +47,50 @@ function fmtTime(ts: number): string {
   });
 }
 
+// Solar-time offset from UTC, in hours, derived from longitude (15° per hour).
+// Accurate to ~30 min; ignores DST. The goal is "what is the sun doing at this
+// point" — close enough for "morning / afternoon / evening" reasoning.
+function tzOffsetHours(lon: number): number {
+  return Math.round(lon / 15);
+}
+
+/** Shift a UTC timestamp into the point's local solar time and return a Date. */
+function localDate(ts: number, offsetHours: number): Date {
+  return new Date(ts + offsetHours * 3600_000);
+}
+
+/** Two-digit hour in local solar time (e.g. "06", "18"). */
+function fmtHour(ts: number, offsetHours: number): string {
+  const d = localDate(ts, offsetHours);
+  return String(d.getUTCHours()).padStart(2, "0");
+}
+
+/** Short weekday abbreviation in local solar time (e.g. "Wed"). */
+function fmtDay(ts: number, offsetHours: number): string {
+  const d = localDate(ts, offsetHours);
+  return d.toLocaleDateString(undefined, { weekday: "short", timeZone: "UTC" });
+}
+
+/** Full date + time for hover tooltips (e.g. "Wed May 28, 14:00 local"). */
+function fmtFullLocal(ts: number, offsetHours: number): string {
+  const d = localDate(ts, offsetHours);
+  return d.toLocaleString(undefined, {
+    timeZone: "UTC",
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }) + " local";
+}
+
+// Silences `noUnusedLocals` until Task 5 wires these helpers into the x-axis.
+void tzOffsetHours;
+void fmtHour;
+void fmtDay;
+void fmtFullLocal;
+
 export function PointChart({
   point,
   meta,
