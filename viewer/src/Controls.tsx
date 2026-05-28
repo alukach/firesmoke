@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { startTransition, useEffect, useRef, useState } from "react";
 import { currentPosition, SPEEDS, type PlaybackState, type Speed } from "./playback.ts";
 import { RunPicker } from "./RunPicker.tsx";
 import type { ForecastMeta, Frame, PrefetchProgress } from "./useForecast.ts";
@@ -87,7 +87,12 @@ export function Controls({
   const [useUtc, setUseUtc] = useState(false);
   const toggleTz = () => setUseUtc((u) => !u);
 
+  // While the user is actively dragging the slider, displayPos is owned by
+  // the drag handler; suppress the playback-driven sync so a transitioned
+  // seek update doesn't snap the thumb back mid-drag.
+  const draggingRef = useRef(false);
   useEffect(() => {
+    if (draggingRef.current) return;
     if (!playback.playing) {
       setDisplayPos(currentPosition(playback, N));
       return;
@@ -168,7 +173,24 @@ export function Controls({
           max={Math.max(0, N - 1)}
           step={0.01}
           value={displayPos}
-          onChange={(e) => onSeek(Number(e.target.value))}
+          onPointerDown={() => {
+            draggingRef.current = true;
+          }}
+          onPointerUp={() => {
+            draggingRef.current = false;
+          }}
+          onPointerCancel={() => {
+            draggingRef.current = false;
+          }}
+          onChange={(e) => {
+            const v = Number(e.target.value);
+            // Update the slider's local position synchronously so the
+            // thumb tracks the cursor; defer the global setPlayback +
+            // deck.gl redraw to a transition so layout/paint cascades
+            // don't drop frames during a fast drag.
+            setDisplayPos(v);
+            startTransition(() => onSeek(v));
+          }}
           style={{ width: "100%" }}
         />
         <PrefetchBar pct={prefetchPct} done={prefetchDone} />
