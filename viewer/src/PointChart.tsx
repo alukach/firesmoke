@@ -112,6 +112,15 @@ export function PointChart({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [point, meta, peekFrame, deferredFramesVersion, N]);
 
+  const [entered, setEntered] = useState(false);
+  useEffect(() => {
+    // Two-step: mount fully translated, then transition to 0 on next tick.
+    // setTimeout(0) is enough because React commits the initial paint
+    // before the timer fires.
+    const id = window.setTimeout(() => setEntered(true), 0);
+    return () => window.clearTimeout(id);
+  }, []);
+
   // Live scrubber position (separate state, throttled to 10Hz while playing).
   const [displayPos, setDisplayPos] = useState(() =>
     currentPosition(playback, N),
@@ -251,6 +260,9 @@ export function PointChart({
         gap: 6,
         height: "clamp(220px, 30vh, 360px)",
         boxSizing: "border-box",
+        transform: entered ? "translateY(0)" : "translateY(100%)",
+        transition: "transform 180ms cubic-bezier(0.2, 0, 0, 1)",
+        willChange: "transform",
       }}
     >
       <div
