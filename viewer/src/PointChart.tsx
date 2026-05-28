@@ -1,5 +1,5 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { colorAt, type Palette } from "./colormap.ts";
+import { colorAt, pmCategory, type Palette } from "./colormap.ts";
 import { currentPosition, type PlaybackState } from "./playback.ts";
 import type { ForecastMeta, Frame } from "./useForecast.ts";
 import { useIsCompact, useViewportWidth } from "./useResponsive.ts";
@@ -275,13 +275,35 @@ export function PointChart({
           ×
         </button>
       </div>
-      <div style={{ fontSize: 11, opacity: 0.65, display: "flex", justifyContent: "space-between" }}>
-        <span>PM2.5 over forecast (µg/m³)</span>
+      <div
+        style={{
+          fontSize: 11,
+          opacity: 0.65,
+          display: "flex",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          columnGap: 8,
+        }}
+      >
+        <span>PM2.5 (µg/m³)</span>
         <span>
           now:{" "}
           <span style={{ color: "#fff", fontWeight: 600 }}>
-            {scrubVal === null ? "—" : `${scrubVal.toFixed(1)}`}
+            {scrubVal === null ? "—" : scrubVal.toFixed(1)}
           </span>
+          {scrubVal !== null && (
+            <>
+              {" "}—{" "}
+              <span
+                style={{
+                  color: colorAt(palette, scrubVal),
+                  fontWeight: 600,
+                }}
+              >
+                {pmCategory(scrubVal, isCompact)}
+              </span>
+            </>
+          )}
         </span>
       </div>
       {!inBounds ? (
