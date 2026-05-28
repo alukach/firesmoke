@@ -152,12 +152,22 @@ export function PointChart({
   // Hour ticks every 3h on desktop / every 6h on compact, to avoid label crowding.
   const hourStep = isCompact ? 6 : 3;
   const hourTicks = useMemo(() => {
-    const ticks: { i: number; hour: string; isMidnight: boolean }[] = [];
+    const ticks: {
+      i: number;
+      hour: string;
+      isMidnight: boolean;
+      isNoon: boolean;
+    }[] = [];
     for (let i = 0; i < N; i++) {
       const d = localDate(meta.validTimes[i]!, tzOff);
       const h = d.getUTCHours();
       if (h % hourStep !== 0) continue;
-      ticks.push({ i, hour: String(h).padStart(2, "0"), isMidnight: h === 0 });
+      ticks.push({
+        i,
+        hour: String(h).padStart(2, "0"),
+        isMidnight: h === 0,
+        isNoon: h === 12,
+      });
     }
     return ticks;
   }, [meta.validTimes, N, tzOff, hourStep]);
@@ -361,13 +371,47 @@ export function PointChart({
             WebkitUserSelect: "none",
           }}
         >
+          {/* Alternating day-shading bands behind everything else, so each
+              day reads as its own zone at a glance. */}
+          {dayGroups.map((g, gi) => {
+            if (gi % 2 !== 0) return null;
+            const x1 = PAD.left + g.startI * barW;
+            const x2 = PAD.left + (g.endI + 1) * barW;
+            return (
+              <rect
+                key={`band${gi}`}
+                x={x1}
+                y={PAD.top}
+                width={x2 - x1}
+                height={innerH}
+                fill="rgba(255,255,255,0.045)"
+              />
+            );
+          })}
+          {/* Midnight separators — vertical dashed lines at day boundaries. */}
+          {hourTicks
+            .filter((t) => t.isMidnight && t.i > 0)
+            .map((t) => {
+              const x = PAD.left + t.i * barW;
+              return (
+                <line
+                  key={`mid${t.i}`}
+                  x1={x}
+                  x2={x}
+                  y1={PAD.top}
+                  y2={PAD.top + innerH}
+                  stroke="rgba(255,255,255,0.22)"
+                  strokeDasharray="2 4"
+                />
+              );
+            })}
           {/* baseline */}
           <line
             x1={PAD.left}
             x2={PAD.left + innerW}
             y1={PAD.top + innerH}
             y2={PAD.top + innerH}
-            stroke="rgba(255,255,255,0.2)"
+            stroke="rgba(255,255,255,0.35)"
           />
           {/* max-y tick */}
           <text
@@ -447,26 +491,39 @@ export function PointChart({
           {/* Hour ticks — small marks above the day-name row */}
           {hourTicks.map((t) => {
             const x = PAD.left + (t.i + 0.5) * barW;
-            return (
-              <g key={`h${t.i}`}>
-                <line
-                  x1={x}
-                  x2={x}
-                  y1={PAD.top + innerH}
-                  y2={PAD.top + innerH + (t.isMidnight ? 5 : 3)}
-                  stroke={t.isMidnight ? "rgba(255,255,255,0.45)" : "rgba(255,255,255,0.25)"}
-                />
-                <text
-                  x={x}
-                  y={PAD.top + innerH + 14}
-                  fontSize={9}
-                  fill={t.isMidnight ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.5)"}
-                  textAnchor="middle"
-                >
-                  {t.hour}
-                </text>
-              </g>
-            );
+            const tickLen = t.isMidnight ? 6 : t.isNoon ? 4 : 3;
+              const tickStroke = t.isMidnight
+                ? "rgba(255,255,255,0.6)"
+                : t.isNoon
+                  ? "rgba(255,255,255,0.4)"
+                  : "rgba(255,255,255,0.25)";
+              const labelFill = t.isMidnight
+                ? "rgba(255,255,255,0.92)"
+                : t.isNoon
+                  ? "rgba(255,255,255,0.75)"
+                  : "rgba(255,255,255,0.5)";
+              const labelWeight = t.isMidnight ? 700 : t.isNoon ? 600 : 400;
+              return (
+                <g key={`h${t.i}`}>
+                  <line
+                    x1={x}
+                    x2={x}
+                    y1={PAD.top + innerH}
+                    y2={PAD.top + innerH + tickLen}
+                    stroke={tickStroke}
+                  />
+                  <text
+                    x={x}
+                    y={PAD.top + innerH + 14}
+                    fontSize={10}
+                    fontWeight={labelWeight}
+                    fill={labelFill}
+                    textAnchor="middle"
+                  >
+                    {t.hour}
+                  </text>
+                </g>
+              );
           })}
           {/* Day labels — centered under each day's span */}
           {dayGroups.map((g, gi) => {
@@ -477,10 +534,11 @@ export function PointChart({
                 key={`d${gi}`}
                 x={cx}
                 y={chartH - 4}
-                fontSize={12}
-                fontWeight={isActive ? 600 : 400}
-                fill={isActive ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.55)"}
+                fontSize={13}
+                fontWeight={isActive ? 700 : 500}
+                fill={isActive ? "#fff" : "rgba(255,255,255,0.72)"}
                 textAnchor="middle"
+                letterSpacing={0.3}
               >
                 {g.label}
               </text>
