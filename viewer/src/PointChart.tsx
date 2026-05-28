@@ -1,5 +1,5 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { categoryStyle, colorAt, pmCategory, type Palette } from "./colormap.ts";
+import { categoryStyle, colorAt, PM_MAX, pmCategory, type Palette } from "./colormap.ts";
 import { currentPosition, type PlaybackState } from "./playback.ts";
 import type { ForecastMeta, Frame } from "./useForecast.ts";
 import { useIsCompact, useViewportHeight, useViewportWidth } from "./useResponsive.ts";
@@ -122,9 +122,12 @@ export function PointChart({
     const ok = col >= 0 && col < meta.width && row >= 0 && row < meta.height;
     const s: (number | null)[] = new Array(N).fill(null);
     if (ok) {
+      // frame.data is Uint8 (0-255) quantized against PM_MAX in the worker;
+      // scale back to µg/m³ here for chart display and category lookup.
+      const scale = PM_MAX / 255;
       for (let i = 0; i < N; i++) {
         const f = peekFrame(i);
-        if (f) s[i] = f.data[row * meta.width + col]!;
+        if (f) s[i] = f.data[row * meta.width + col]! * scale;
       }
     }
     return { series: s, inBounds: ok };

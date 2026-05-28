@@ -1,7 +1,11 @@
 /// <reference lib="webworker" />
 // Web Worker: owns zarrita FetchStore and zstd decode.
-// Posts raw Float32Array slices back to the main thread as transferables.
+// Posts Uint8Array slices (PM2.5 quantized to 0-255 against PM_MAX) back to
+// the main thread as transferables. Quantization happens here to cut both
+// postMessage transfer and downstream GPU texture upload bandwidth by 4x;
+// the final rendered color comes from a 256-bin LUT, so R8 is lossless.
 import * as zarr from "zarrita";
+import { PM_MAX } from "./colormap.ts";
 
 declare const self: DedicatedWorkerGlobalScope;
 
@@ -25,7 +29,7 @@ type OutMsg =
       type: "load-result";
       reqId: number;
       physIdx: number;
-      data: Float32Array;
+      data: Uint8Array;
       maxPm25: number;
       initTime: number;
     }
@@ -142,21 +146,26 @@ async function handleLoad(msg: LoadMsg): Promise<void> {
     ]);
     const data = result.data as Float32Array;
 
+    // Quantize Float32 µg/m³ → Uint8 [0,255] against PM_MAX in one pass,
+    // folding the max-scan into the same loop so we don't touch the array twice.
+    const out = new Uint8Array(data.length);
     let maxPm25 = 0;
     for (let i = 0; i < data.length; i++) {
       const v = data[i]!;
       if (v > maxPm25) maxPm25 = v;
+      const q = Math.round((v / PM_MAX) * 255);
+      out[i] = q > 255 ? 255 : q < 0 ? 0 : q;
     }
 
-    const out: OutMsg = {
+    const outMsg: OutMsg = {
       type: "load-result",
       reqId: msg.reqId,
       physIdx: msg.physIdx,
-      data,
+      data: out,
       maxPm25,
       initTime: initTimesAll[selectedInitIdx]!,
     };
-    self.postMessage(out, [data.buffer]);
+    self.postMessage(outMsg, [out.buffer]);
   } catch (err) {
     const out: OutMsg = {
       type: "error",
