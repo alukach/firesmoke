@@ -44,7 +44,12 @@ function localDate(ts: number, offsetHours: number): Date {
 /** Short weekday abbreviation in local solar time (e.g. "Wed"). */
 function fmtDay(ts: number, offsetHours: number): string {
   const d = localDate(ts, offsetHours);
-  return d.toLocaleDateString(undefined, { weekday: "short", timeZone: "UTC" });
+  return d.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 /** Full date + time for hover tooltips (e.g. "Wed May 28, 14:00 local"). */
@@ -136,7 +141,7 @@ export function PointChart({
 
   // Hour ticks at 06/12/18/00 in local solar time. On compact viewports drop
   // to every 12 hours (00/12) to avoid label crowding.
-  const hourStep = isCompact ? 12 : 6;
+  const hourStep = isCompact ? 6 : 3;
   const hourTicks = useMemo(() => {
     const ticks: { i: number; hour: string; isMidnight: boolean }[] = [];
     for (let i = 0; i < N; i++) {
@@ -450,7 +455,7 @@ export function PointChart({
                 key={`d${gi}`}
                 x={cx}
                 y={chartH - 4}
-                fontSize={10}
+                fontSize={12}
                 fontWeight={isActive ? 600 : 400}
                 fill={isActive ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.55)"}
                 textAnchor="middle"
