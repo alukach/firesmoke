@@ -23,6 +23,21 @@ forecasts.zarr/
 
 `PM25_runs` is the full per-run archive. `PM25_latest` is the latest-wins view the viewer animates: each `valid_time = init_time + lead_hour` slot is overwritten only when the incoming run is at least as new as `latest_init_time[valid_time]`. That makes ingest commutative — backfilling an older run never clobbers a fresher forecast. The single-frame chunk shape means one HTTP range request = one frame.
 
+<details>
+<summary>PM2.5 is stored as <code>int16</code> with CF <code>scale_factor=0.1</code> — what that costs and buys</summary>
+
+The BlueSky source is `float32` µg/m³, but float32 of mostly-zero environmental data compresses badly under zstd (~30 % reduction in practice). Storing as `int16` with `scale_factor=0.1` and `add_offset=0` gives:
+
+- **~5× smaller chunks on the wire.** Half the raw bytes, and the integer representation strips the float mantissa noise zstd can't compress.
+- **Round-trip precision of 0.1 µg/m³.** Smaller than the model's own representational accuracy; smaller than ambient measurement uncertainty.
+- **Saturation ceiling of ±3276.7 µg/m³.** Above any realistic wildfire reading. The 2018 Camp Fire peak was ~600 µg/m³; saturation would only kick in for industrial-accident territory.
+- **`_FillValue = -32768`** reserves the int16 minimum for NaN. xarray's `decode_cf=True` (default) restores `np.nan` automatically.
+- **CF conventions** mean any CF-aware reader (xarray, netCDF4, cf-python, the viewer worker) decodes transparently. Non-CF readers see raw int16 and need to apply the scale.
+
+Cost: the on-disk values are no longer bit-exact reproductions of BlueSky's float output. A consumer who needs to reproduce the source dataset byte-for-byte should fetch the original NetCDF, not this Zarr.
+
+</details>
+
 ```bash
 uv run firesmoke-ingest <domain>/<run>   # or: uv run firesmoke-ingest current
 ```
