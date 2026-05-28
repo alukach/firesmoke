@@ -4,7 +4,7 @@ import { currentPosition, type PlaybackState } from "./playback.ts";
 import type { ForecastMeta, Frame } from "./useForecast.ts";
 import { useIsCompact, useViewportHeight, useViewportWidth } from "./useResponsive.ts";
 
-const PAD = { top: 8, right: 76, bottom: 38, left: 12 };
+const PAD = { top: 8, right: 76, bottom: 54, left: 12 };
 const DISPLAY_HZ = 10;
 const SIDE_GUTTER = 16;
 const HEADER_HEIGHT = 28;
@@ -54,15 +54,23 @@ function localDate(ts: number, offsetHours: number): Date {
   return new Date(ts + offsetHours * 3600_000);
 }
 
-/** Short weekday abbreviation in local solar time (e.g. "Wed"). */
-function fmtDay(ts: number, offsetHours: number): string {
+/** Weekday + month/day rendered on two separate axis rows. */
+function fmtDayParts(ts: number, offsetHours: number): {
+  weekday: string;
+  date: string;
+} {
   const d = localDate(ts, offsetHours);
-  return d.toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  });
+  return {
+    weekday: d.toLocaleDateString(undefined, {
+      weekday: "short",
+      timeZone: "UTC",
+    }),
+    date: d.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      timeZone: "UTC",
+    }),
+  };
 }
 
 /** Full date + time for hover tooltips (e.g. "Wed May 28, 14:00 local"). */
@@ -193,16 +201,23 @@ export function PointChart({
   // Day groups: contiguous indices that share a local-solar date. Used to
   // center day labels under each day's span.
   const dayGroups = useMemo(() => {
-    const groups: { startI: number; endI: number; label: string }[] = [];
+    const groups: {
+      startI: number;
+      endI: number;
+      weekday: string;
+      date: string;
+    }[] = [];
     let currentKey = "";
     for (let i = 0; i < N; i++) {
       const d = localDate(meta.validTimes[i]!, tzOff);
       const key = `${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTCDate()}`;
       if (key !== currentKey) {
+        const parts = fmtDayParts(meta.validTimes[i]!, tzOff);
         groups.push({
           startI: i,
           endI: i,
-          label: fmtDay(meta.validTimes[i]!, tzOff),
+          weekday: parts.weekday,
+          date: parts.date,
         });
         currentKey = key;
       } else {
@@ -564,23 +579,34 @@ export function PointChart({
                 </g>
               );
           })}
-          {/* Day labels — centered under each day's span */}
+          {/* Day labels — two rows: weekday prominent, date subdued. */}
           {dayGroups.map((g, gi) => {
             const cx = PAD.left + ((g.startI + g.endI + 1) / 2) * barW;
             const isActive = gi === activeDayGroup;
             return (
-              <text
-                key={`d${gi}`}
-                x={cx}
-                y={chartH - 4}
-                fontSize={13}
-                fontWeight={isActive ? 700 : 500}
-                fill={isActive ? "#fff" : "rgba(255,255,255,0.72)"}
-                textAnchor="middle"
-                letterSpacing={0.3}
-              >
-                {g.label}
-              </text>
+              <g key={`d${gi}`}>
+                <text
+                  x={cx}
+                  y={chartH - 22}
+                  fontSize={14}
+                  fontWeight={isActive ? 700 : 600}
+                  fill={isActive ? "#fff" : "rgba(255,255,255,0.82)"}
+                  textAnchor="middle"
+                  letterSpacing={0.4}
+                >
+                  {g.weekday}
+                </text>
+                <text
+                  x={cx}
+                  y={chartH - 6}
+                  fontSize={11}
+                  fontWeight={400}
+                  fill={isActive ? "rgba(255,255,255,0.78)" : "rgba(255,255,255,0.55)"}
+                  textAnchor="middle"
+                >
+                  {g.date}
+                </text>
+              </g>
             );
           })}
           {/* Accessible full timestamp for first/last bars (screen-reader tooltip) */}
