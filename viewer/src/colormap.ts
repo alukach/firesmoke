@@ -122,10 +122,18 @@ export function colorAt(palette: Palette, pm25: number): string {
   return `rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(3)})`;
 }
 
-/** Bar color stripped of LUT alpha, for use as text on a light pill background. */
-export function categoryColor(palette: Palette, pm25: number): string {
+export type CategoryStyle = { bg: string; fg: string };
+
+/** Pill style for an EPA AQI category: bar color as background, auto-contrast
+ * text color so every category remains legible (white on bright greens / yellows
+ * would fail; black on dark reds / purples would fail; this picks per stop). */
+export function categoryStyle(palette: Palette, pm25: number): CategoryStyle {
   const [r, g, b] = interpStops(palette.stops, pm25);
-  return `rgb(${r}, ${g}, ${b})`;
+  const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+  return {
+    bg: `rgb(${r}, ${g}, ${b})`,
+    fg: lum > 140 ? "rgba(0, 0, 0, 0.88)" : "#fff",
+  };
 }
 
 /** EPA AQI category for a PM2.5 value (µg/m³). Thresholds match EPA_AQI_STOPS. */

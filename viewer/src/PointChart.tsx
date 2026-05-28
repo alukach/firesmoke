@@ -1,5 +1,5 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { categoryColor, colorAt, pmCategory, type Palette } from "./colormap.ts";
+import { categoryStyle, colorAt, pmCategory, type Palette } from "./colormap.ts";
 import { currentPosition, type PlaybackState } from "./playback.ts";
 import type { ForecastMeta, Frame } from "./useForecast.ts";
 import { useIsCompact, useViewportHeight, useViewportWidth } from "./useResponsive.ts";
@@ -297,25 +297,29 @@ export function PointChart({
             <span style={{ color: "#fff", fontWeight: 600 }}>
               {scrubVal === null ? "—" : scrubVal.toFixed(1)}
             </span>
-            {scrubVal !== null && (
-              <>
-                {" "}
-                <span
-                  style={{
-                    color: categoryColor(palette, scrubVal),
-                    background: "rgba(255, 255, 255, 0.94)",
-                    fontWeight: 700,
-                    padding: "1px 7px",
-                    borderRadius: 10,
-                    fontSize: 11,
-                    letterSpacing: 0.2,
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {pmCategory(scrubVal, isCompact)}
-                </span>
-              </>
-            )}
+            {scrubVal !== null && (() => {
+              const { bg, fg } = categoryStyle(palette, scrubVal);
+              return (
+                <>
+                  {" "}
+                  <span
+                    style={{
+                      color: fg,
+                      background: bg,
+                      fontWeight: 700,
+                      padding: "2px 8px",
+                      borderRadius: 10,
+                      fontSize: 11,
+                      letterSpacing: 0.3,
+                      whiteSpace: "nowrap",
+                      boxShadow: "0 0 0 1px rgba(0,0,0,0.2)",
+                    }}
+                  >
+                    {pmCategory(scrubVal, isCompact)}
+                  </span>
+                </>
+              );
+            })()}
           </span>
         </div>
         <button
