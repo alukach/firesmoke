@@ -15,10 +15,7 @@ export type ForecastMeta = {
 };
 
 export type Frame = {
-  /** PM2.5 quantized to 0-255 against PM_MAX in the worker. Multiply by
-   *  PM_MAX/255 to recover µg/m³ for CPU-side consumers; the GPU samples
-   *  the r8unorm texture directly into the colormap LUT. */
-  data: Uint8Array;
+  data: Float32Array;
   maxPm25: number;
   initTime: number;
 };

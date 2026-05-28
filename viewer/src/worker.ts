@@ -1,11 +1,10 @@
 /// <reference lib="webworker" />
 // Web Worker: owns zarrita FetchStore and zstd decode.
-// Posts Uint8Array slices (PM2.5 quantized to 0-255 against PM_MAX) back to
-// the main thread as transferables. Quantization happens here to cut both
-// postMessage transfer and downstream GPU texture upload bandwidth by 4x;
-// the final rendered color comes from a 256-bin LUT, so R8 is lossless.
+// Posts Float32Array slices (PM2.5 in µg/m³) back to the main thread as
+// transferables. Reads CF int16 + scale_factor from the store and decodes
+// to Float32 here so the GPU samples at full precision (R8 quantization
+// was visibly stepping smoke gradients).
 import * as zarr from "zarrita";
-import { PM_MAX } from "./colormap.ts";
 
 declare const self: DedicatedWorkerGlobalScope;
 
@@ -29,7 +28,7 @@ type OutMsg =
       type: "load-result";
       reqId: number;
       physIdx: number;
-      data: Uint8Array;
+      data: Float32Array;
       maxPm25: number;
       initTime: number;
     }
@@ -159,17 +158,12 @@ async function handleLoad(msg: LoadMsg): Promise<void> {
       null,
       null,
     ]);
-    // Store is int16 with CF scale_factor (see firesmoke_ingest). Fuse the
-    // CF-decode and Uint8 quantization-against-PM_MAX into one pass so we
-    // never materialize the intermediate Float32 array. Per element:
-    //   ug = raw * pm25Scale + pm25Offset
-    //   u8 = round(ug / PM_MAX * 255)  -- precomputed multipliers below.
-    // Also tracks the raw max to recover maxPm25 with one multiply at end.
+    // Store is int16 with CF scale_factor (see firesmoke_ingest). Decode
+    // to Float32 µg/m³ and track the raw max in the same pass; the GPU
+    // sample sees full-precision values so the colormap stays smooth.
     const data = result.data as Int16Array;
-    const a = (pm25Scale * 255) / PM_MAX;
-    const b = (pm25Offset * 255) / PM_MAX;
     const fill = pm25Fill;
-    const out = new Uint8Array(data.length);
+    const out = new Float32Array(data.length);
     let maxRaw = 0;
     for (let i = 0; i < data.length; i++) {
       const v = data[i]!;
@@ -178,8 +172,7 @@ async function handleLoad(msg: LoadMsg): Promise<void> {
         continue;
       }
       if (v > maxRaw) maxRaw = v;
-      const q = Math.round(v * a + b);
-      out[i] = q > 255 ? 255 : q < 0 ? 0 : q;
+      out[i] = v * pm25Scale + pm25Offset;
     }
     const maxPm25 = maxRaw * pm25Scale + pm25Offset;
 

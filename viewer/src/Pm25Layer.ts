@@ -14,11 +14,12 @@ import type { BitmapLayerProps } from "@deck.gl/layers";
 import type { UpdateParameters } from "@deck.gl/core";
 import type { Texture } from "@luma.gl/core";
 import type { ShaderModule } from "@luma.gl/shadertools";
+import { PM_MAX } from "./colormap.ts";
 import type { Frame } from "./useForecast.ts";
 
-// Bound the per-Frame GPU texture cache. At ~400 KB per r8unorm texture
-// (post-T2 quantization), 64 entries cap us at ~25 MB — comfortably more
-// than a typical 51-frame forecast, with headroom for run switches.
+// Bound the per-Frame GPU texture cache. At ~1.6 MB per r32float texture,
+// 64 entries cap us at ~100 MB — more than a typical 51-frame forecast,
+// with headroom for run switches.
 const MAX_CACHED_FRAMES = 64;
 
 const FRAGMENT_SHADER = /* glsl */ `\
@@ -81,12 +82,12 @@ void main(void) {
   // BitmapLayer's tex coords put y=0 at the top of the bounds (north).
   // Flip Y when sampling so data lands at the right latitude.
   vec2 dataUv = vec2(uv.x, 1.0 - uv.y);
-  // PM2.5 textures are r8unorm — the sampled .r is already normalized to
-  // [0,1] against PM_MAX (quantization happens in worker.ts), so we feed
-  // it straight into the colormap LUT without re-dividing by pmMax.
-  float tA = texture(bitmapTexture, dataUv).r;
-  float tB = texture(bitmapTextureB, dataUv).r;
-  float t = clamp(mix(tA, tB, pm25Blend.tMix), 0.0, 1.0);
+  // PM2.5 textures are r32float in µg/m³. Normalize against pmMax for
+  // the LUT lookup.
+  float pm25A = texture(bitmapTexture, dataUv).r;
+  float pm25B = texture(bitmapTextureB, dataUv).r;
+  float pm25 = mix(pm25A, pm25B, pm25Blend.tMix);
+  float t = clamp(pm25 / pm25Blend.pmMax, 0.0, 1.0);
   // Sample the colormap LUT (256x1 RGBA8). The alpha channel encodes the
   // palette's threshold behavior (alpha=0 below the visible threshold).
   vec4 c = texture(colormapTexture, vec2(t, 0.5));
@@ -101,17 +102,18 @@ void main(void) {
 const blendUniformBlock = /* glsl */ `\
 layout(std140) uniform pm25BlendUniforms {
   float tMix;
+  float pmMax;
 } pm25Blend;
 `;
 
-type BlendUniforms = { tMix: number };
+type BlendUniforms = { tMix: number; pmMax: number };
 type BlendBindings = { bitmapTextureB: Texture; colormapTexture: Texture };
 
 const pm25BlendModule: ShaderModule<BlendUniforms & BlendBindings, BlendUniforms> = {
   name: "pm25Blend",
   vs: blendUniformBlock,
   fs: blendUniformBlock,
-  uniformTypes: { tMix: "f32" },
+  uniformTypes: { tMix: "f32", pmMax: "f32" },
 };
 
 export type Pm25LayerProps = Omit<BitmapLayerProps, "image"> & {
@@ -289,6 +291,7 @@ export class Pm25Layer extends BitmapLayer<Pm25LayerProps> {
         bitmapTextureB: dataTextureB,
         colormapTexture,
         tMix,
+        pmMax: PM_MAX,
       },
     });
     model.draw(this.context.renderPass);
@@ -341,7 +344,7 @@ export class Pm25Layer extends BitmapLayer<Pm25LayerProps> {
     tex = device.createTexture({
       width: imageWidth,
       height: imageHeight,
-      format: "r8unorm",
+      format: "r32float",
       sampler: {
         minFilter: "nearest",
         magFilter: "nearest",
