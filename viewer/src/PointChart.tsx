@@ -162,9 +162,11 @@ export function PointChart({
       const d = localDate(meta.validTimes[i]!, tzOff);
       const h = d.getUTCHours();
       if (h % hourStep !== 0) continue;
+      const hour12 = ((h + 11) % 12) + 1;
+      const suffix = h < 12 ? "am" : "pm";
       ticks.push({
         i,
-        hour: String(h).padStart(2, "0"),
+        hour: `${hour12}${suffix}`,
         isMidnight: h === 0,
         isNoon: h === 12,
       });
