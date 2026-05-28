@@ -38,6 +38,13 @@ type OutMsg =
 let pm25Runs: zarr.Array<zarr.NumberDataType, zarr.Readable> | null = null;
 let initTimesAll: number[] = [];
 let selectedInitIdx = 0;
+// CF-style scaling from the PM25_runs array attrs. Raw stored value
+// (int16) * scale + offset = µg/m³. Default to identity in case the
+// ingest stops scaling someday.
+let pm25Scale = 1;
+let pm25Offset = 0;
+// int16 sentinel for missing data (see firesmoke_ingest PM25_FILL).
+let pm25Fill: number | null = null;
 
 // Schemas the viewer knows how to read. Bump when the store layout
 // changes in an incompatible way; the ingest writes `schema_version`
@@ -104,6 +111,14 @@ async function handleInit(msg: InitMsg): Promise<void> {
     pm25Runs = runsArr as zarr.Array<zarr.NumberDataType, zarr.Readable>;
     initTimesAll = initTimes;
     selectedInitIdx = initIdx;
+    const runsAttrs = runsArr.attrs as {
+      scale_factor?: number;
+      add_offset?: number;
+      _FillValue?: number;
+    };
+    pm25Scale = runsAttrs.scale_factor ?? 1;
+    pm25Offset = runsAttrs.add_offset ?? 0;
+    pm25Fill = runsAttrs._FillValue ?? null;
 
     const meta: InitMeta = {
       validTimes,
@@ -144,18 +159,29 @@ async function handleLoad(msg: LoadMsg): Promise<void> {
       null,
       null,
     ]);
-    const data = result.data as Float32Array;
-
-    // Quantize Float32 µg/m³ → Uint8 [0,255] against PM_MAX in one pass,
-    // folding the max-scan into the same loop so we don't touch the array twice.
+    // Store is int16 with CF scale_factor (see firesmoke_ingest). Fuse the
+    // CF-decode and Uint8 quantization-against-PM_MAX into one pass so we
+    // never materialize the intermediate Float32 array. Per element:
+    //   ug = raw * pm25Scale + pm25Offset
+    //   u8 = round(ug / PM_MAX * 255)  -- precomputed multipliers below.
+    // Also tracks the raw max to recover maxPm25 with one multiply at end.
+    const data = result.data as Int16Array;
+    const a = (pm25Scale * 255) / PM_MAX;
+    const b = (pm25Offset * 255) / PM_MAX;
+    const fill = pm25Fill;
     const out = new Uint8Array(data.length);
-    let maxPm25 = 0;
+    let maxRaw = 0;
     for (let i = 0; i < data.length; i++) {
       const v = data[i]!;
-      if (v > maxPm25) maxPm25 = v;
-      const q = Math.round((v / PM_MAX) * 255);
+      if (v === fill) {
+        out[i] = 0;
+        continue;
+      }
+      if (v > maxRaw) maxRaw = v;
+      const q = Math.round(v * a + b);
       out[i] = q > 255 ? 255 : q < 0 ? 0 : q;
     }
+    const maxPm25 = maxRaw * pm25Scale + pm25Offset;
 
     const outMsg: OutMsg = {
       type: "load-result",
