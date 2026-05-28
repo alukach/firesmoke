@@ -108,7 +108,11 @@ export function PointChart({
   // SVG's height attribute doesn't honor CSS clamp(), so we mirror it here.
   const drawerH = Math.max(220, Math.min(360, vh * 0.3));
   const bannerH = isLatest ? 0 : 28;
-  const chartH = drawerH - HEADER_HEIGHT - 12 - bannerH;
+  // Drawer is `padding: 12px 16px` (24px vertical) + `gap: 6px` between
+  // header and svg + optional banner. Allocate the SVG exactly what's left;
+  // otherwise the flex layout squishes the bottom of the chart and the
+  // day-label rows get clipped.
+  const chartH = drawerH - HEADER_HEIGHT - 24 - 6 - bannerH;
   const chartW = vw - SIDE_GUTTER * 2;
   const innerW = chartW - PAD.left - PAD.right;
   const innerH = chartH - PAD.top - PAD.bottom;
