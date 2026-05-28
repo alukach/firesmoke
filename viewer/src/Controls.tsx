@@ -117,11 +117,7 @@ export function Controls({
     ? meta.validTimes[idxA]!
     : meta.validTimes[idxA]! +
       tMix * (meta.validTimes[idxB]! - meta.validTimes[idxA]!);
-  const initTimeNow = wrapping
-    ? meta.initTimes[idxA]!
-    : tMix < 0.5
-      ? meta.initTimes[idxA]!
-      : meta.initTimes[idxB]!;
+  const initTimeNow = meta.initTimes[meta.selectedIdx]!;
 
   const frameA = peekFrame(idxA);
   const frameB = peekFrame(idxB);

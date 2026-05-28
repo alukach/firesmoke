@@ -104,6 +104,17 @@ export default function App() {
   // it this effect would re-fire and re-trigger play() after the user
   // hits pause, immediately undoing their click.
   const autoPlayedRef = useRef(false);
+
+  const handleRunSelect = useCallback(
+    (idx: number) => {
+      setRunIdx(idx);
+      setPlayback((p) => seekTo(p, 0));
+      setSelectedPoint(null);
+      autoPlayedRef.current = false;
+    },
+    [],
+  );
+
   useEffect(() => {
     if (autoPlayedRef.current) return;
     if (state.status !== "ready") return;
@@ -209,7 +220,7 @@ export default function App() {
             peekFrame={state.peekFrame}
             initTimes={state.meta.initTimes}
             selectedRunIdx={state.meta.selectedIdx}
-            onRunSelect={setRunIdx}
+            onRunSelect={handleRunSelect}
           />
         </>
       )}
