@@ -21,12 +21,25 @@ type Props = {
   playbackRef: { readonly current: PlaybackState };
   onSeek: (position: number) => void;
   onClose: () => void;
+  isLatest: boolean;
+  selectedInitTime: number;
 };
 
 function fmtCoord(lat: number, lon: number): string {
   const ns = lat >= 0 ? "N" : "S";
   const ew = lon >= 0 ? "E" : "W";
   return `${Math.abs(lat).toFixed(2)}°${ns}, ${Math.abs(lon).toFixed(2)}°${ew}`;
+}
+
+function fmtRunUtc(ts: number): string {
+  return new Date(ts).toLocaleString(undefined, {
+    timeZone: "UTC",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }) + " UTC";
 }
 
 // Solar-time offset from UTC, in hours, derived from longitude (15° per hour).
@@ -76,6 +89,8 @@ export function PointChart({
   playbackRef,
   onSeek,
   onClose,
+  isLatest,
+  selectedInitTime,
 }: Props) {
   const N = meta.validTimes.length;
   const isCompact = useIsCompact();
@@ -277,6 +292,27 @@ export function PointChart({
         willChange: "transform",
       }}
     >
+      {!isLatest && (
+        <div
+          style={{
+            background: "rgba(255, 180, 60, 0.18)",
+            color: "rgba(255, 220, 160, 0.95)",
+            border: "1px solid rgba(255, 180, 60, 0.4)",
+            borderRadius: 4,
+            padding: "4px 10px",
+            fontSize: 11,
+            fontWeight: 600,
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+          }}
+        >
+          <span aria-hidden>⚠</span>
+          <span>
+            Historical forecast — initialized {fmtRunUtc(selectedInitTime)}
+          </span>
+        </div>
+      )}
       <div
         style={{
           display: "flex",
