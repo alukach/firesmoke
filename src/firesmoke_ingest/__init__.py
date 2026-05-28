@@ -31,6 +31,25 @@ NS_PER_SEC = 1_000_000_000
 #    handling to NaT instead of a plausible 1970 date.
 TIME_FILL = np.iinfo(np.int64).min
 
+# PM2.5 storage: signed int16 with CF scale_factor=0.1 µg/m³ per int unit.
+# Compresses ~5× better than the source float32 because mostly-zero noise
+# in the float mantissa is gone. Range: -32767..32767 → -3276.7..3276.7
+# µg/m³, well above any realistic wildfire reading. Fill = -32768 reserves
+# the int16 minimum as a NaN sentinel (xarray's decode_cf restores NaN).
+PM25_SCALE = 0.1
+PM25_OFFSET = 0.0
+PM25_FILL = np.int16(-32768)
+
+
+def _quantize_pm25(arr: np.ndarray) -> np.ndarray:
+    """Float32 µg/m³ → int16, with NaN → PM25_FILL."""
+    nan_mask = np.isnan(arr)
+    scaled = np.round(np.where(nan_mask, 0.0, arr) / PM25_SCALE)
+    np.clip(scaled, -32767, 32767, out=scaled)
+    out = scaled.astype(np.int16)
+    out[nan_mask] = PM25_FILL
+    return out
+
 app = typer.Typer(help="Ingest BlueSky Canada dispersion forecasts into zarr-v3.")
 
 
@@ -226,28 +245,37 @@ def _open_or_create_store(store_arg: str, run_ds: xr.Dataset) -> zarr.Group:
                      "long_name": "forecast valid time",
                      "_FillValue": TIME_FILL})
 
-    # Data variables
+    # Data variables. Stored as int16 with CF scale_factor: 0.1 µg/m³ per
+    # int unit. xarray decodes back to float on read (decode_cf default);
+    # the viewer's worker reads scale_factor directly and re-quantizes to
+    # R8 for the GPU.
+    pm25_attrs = {
+        "units": "ug/m^3",
+        "scale_factor": PM25_SCALE,
+        "add_offset": PM25_OFFSET,
+        "_FillValue": int(PM25_FILL),
+    }
     runs = root.create_array(
         "PM25_runs",
         shape=(0, n_lead, n_lat, n_lon),
-        dtype="float32",
+        dtype="int16",
         chunks=(1, 1, n_lat, n_lon),
         compressors=compressors,
-        fill_value=np.float32("nan"),
+        fill_value=PM25_FILL,
         dimension_names=("init_time", "lead_hour", "lat", "lon"),
     )
-    runs.attrs.update({"units": "ug/m^3", "long_name": "PM2.5 per-run forecast archive"})
+    runs.attrs.update({**pm25_attrs, "long_name": "PM2.5 per-run forecast archive"})
 
     latest = root.create_array(
         "PM25_latest",
         shape=(0, n_lat, n_lon),
-        dtype="float32",
+        dtype="int16",
         chunks=(1, n_lat, n_lon),
         compressors=compressors,
-        fill_value=np.float32("nan"),
+        fill_value=PM25_FILL,
         dimension_names=("valid_time", "lat", "lon"),
     )
-    latest.attrs.update({"units": "ug/m^3", "long_name": "PM2.5 latest-wins forecast view"})
+    latest.attrs.update({**pm25_attrs, "long_name": "PM2.5 latest-wins forecast view"})
 
     li = root.create_array(
         "latest_init_time",
@@ -306,29 +334,34 @@ def _append_run(root: zarr.Group, run_ds: xr.Dataset, force: bool) -> bool:
     init_arr = root["init_time"]
     existing = init_arr[:]
 
+    # Quantize once; reused by _update_latest below.
+    pm25_q = _quantize_pm25(run_ds["PM25"].values)
+
     if init_s in existing:
         if not force:
             return False
         idx = int(np.where(existing == init_s)[0][0])
         # Existing slot: just overwrite the data; init_time is already correct.
-        root["PM25_runs"][idx, :, :, :] = run_ds["PM25"].values
+        root["PM25_runs"][idx, :, :, :] = pm25_q
     else:
         idx = init_arr.shape[0]
         runs = root["PM25_runs"]
         # Data first: extend PM25_runs and fill the new row.
         runs.resize((idx + 1, *runs.shape[1:]))
-        runs[idx, :, :, :] = run_ds["PM25"].values
+        runs[idx, :, :, :] = pm25_q
         # Commit: extend init_time and publish the new index. A crash
         # before this line leaves an extra (NaN) row in PM25_runs that
         # the next ingest of the same init_s will overwrite.
         init_arr.resize(idx + 1)
         init_arr[idx] = init_s
 
-    _update_latest(root, init_s, run_ds)
+    _update_latest(root, init_s, run_ds, pm25_q)
     return True
 
 
-def _update_latest(root: zarr.Group, init_s: int, run_ds: xr.Dataset) -> None:
+def _update_latest(
+    root: zarr.Group, init_s: int, run_ds: xr.Dataset, pm25_q: np.ndarray,
+) -> None:
     """Update PM25_latest with this run's frames where it wins.
 
     Crash-ordering follows the same principle as _append_run: data
@@ -337,9 +370,12 @@ def _update_latest(root: zarr.Group, init_s: int, run_ds: xr.Dataset) -> None:
 
     Note: this is not a full transaction. If you need bulletproof
     consistency, run under icechunk or do an offline integrity pass.
+
+    `pm25_q` is the already-quantized int16 PM2.5 (n_lead, lat, lon),
+    reused from _append_run so we don't re-quantize.
     """
     lead_hours = run_ds["lead_hour"].values
-    pm25 = run_ds["PM25"].values  # (n_lead, lat, lon)
+    pm25 = pm25_q  # already int16 quantized
 
     valid_s = init_s + lead_hours.astype("int64") * 3600
 
