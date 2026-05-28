@@ -349,7 +349,7 @@ export function PointChart({
             { pm: 12, label: "Moderate" },
             { pm: 35, label: "Sensitive" },
             { pm: 55, label: "Unhealthy" },
-            { pm: 150, label: "Very Unhealthy" },
+            { pm: 150, label: "V.Unhealthy" },
           ].map((t) => {
             if (t.pm > maxVal) return null;
             const y = PAD.top + innerH - (t.pm / maxVal) * innerH;
