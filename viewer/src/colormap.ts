@@ -121,3 +121,13 @@ export function colorAt(palette: Palette, pm25: number): string {
   const [r, g, b, a] = interpStops(palette.stops, pm25);
   return `rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(3)})`;
 }
+
+/** EPA AQI category for a PM2.5 value (µg/m³). Thresholds match EPA_AQI_STOPS. */
+export function pmCategory(pm25: number, compact = false): string {
+  if (pm25 < 12) return compact ? "Good" : "Good";
+  if (pm25 < 35) return compact ? "Mod" : "Moderate";
+  if (pm25 < 55) return compact ? "USG" : "Unhealthy for Sensitive Groups";
+  if (pm25 < 150) return compact ? "Unh" : "Unhealthy";
+  if (pm25 < 250) return compact ? "V.Unh" : "Very Unhealthy";
+  return compact ? "Haz" : "Hazardous";
+}
