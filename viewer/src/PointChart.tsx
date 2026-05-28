@@ -5,8 +5,8 @@ import type { ForecastMeta, Frame } from "./useForecast.ts";
 import { useIsCompact, useViewportWidth } from "./useResponsive.ts";
 
 const MAX_WIDTH = 380;
-const HEIGHT = 130;
-const PAD = { top: 8, right: 10, bottom: 22, left: 10 };
+const HEIGHT = 148;
+const PAD = { top: 8, right: 56, bottom: 36, left: 10 };
 const DISPLAY_HZ = 10;
 // Reserve horizontal space at the edge of the viewport so the card never
 // touches the screen edge.
@@ -36,17 +36,6 @@ function fmtCoord(lat: number, lon: number): string {
   return `${Math.abs(lat).toFixed(2)}°${ns}, ${Math.abs(lon).toFixed(2)}°${ew}`;
 }
 
-function fmtTime(ts: number): string {
-  return new Date(ts).toLocaleString(undefined, {
-    timeZone: "UTC",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-}
-
 // Solar-time offset from UTC, in hours, derived from longitude (15° per hour).
 // Accurate to ~30 min; ignores DST. The goal is "what is the sun doing at this
 // point" — close enough for "morning / afternoon / evening" reasoning.
@@ -57,12 +46,6 @@ function tzOffsetHours(lon: number): number {
 /** Shift a UTC timestamp into the point's local solar time and return a Date. */
 function localDate(ts: number, offsetHours: number): Date {
   return new Date(ts + offsetHours * 3600_000);
-}
-
-/** Two-digit hour in local solar time (e.g. "06", "18"). */
-function fmtHour(ts: number, offsetHours: number): string {
-  const d = localDate(ts, offsetHours);
-  return String(d.getUTCHours()).padStart(2, "0");
 }
 
 /** Short weekday abbreviation in local solar time (e.g. "Wed"). */
@@ -84,12 +67,6 @@ function fmtFullLocal(ts: number, offsetHours: number): string {
     hour12: false,
   }) + " local";
 }
-
-// Silences `noUnusedLocals` until Task 5 wires these helpers into the x-axis.
-void tzOffsetHours;
-void fmtHour;
-void fmtDay;
-void fmtFullLocal;
 
 export function PointChart({
   point,
@@ -161,6 +138,50 @@ export function PointChart({
     if (m <= 1000) return Math.ceil(m / 100) * 100;
     return Math.ceil(m / 500) * 500;
   }, [series]);
+
+  const tzOff = tzOffsetHours(point.lon);
+
+  // Hour ticks at 06/12/18/00 in local solar time. On compact viewports drop
+  // to every 12 hours (00/12) to avoid label crowding.
+  const hourStep = isCompact ? 12 : 6;
+  const hourTicks = useMemo(() => {
+    const ticks: { i: number; hour: string; isMidnight: boolean }[] = [];
+    for (let i = 0; i < N; i++) {
+      const d = localDate(meta.validTimes[i]!, tzOff);
+      const h = d.getUTCHours();
+      if (h % hourStep !== 0) continue;
+      ticks.push({ i, hour: String(h).padStart(2, "0"), isMidnight: h === 0 });
+    }
+    return ticks;
+  }, [meta.validTimes, N, tzOff, hourStep]);
+
+  // Day groups: contiguous indices that share a local-solar date. Used to
+  // center day labels under each day's span.
+  const dayGroups = useMemo(() => {
+    const groups: { startI: number; endI: number; label: string }[] = [];
+    let currentKey = "";
+    for (let i = 0; i < N; i++) {
+      const d = localDate(meta.validTimes[i]!, tzOff);
+      const key = `${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTCDate()}`;
+      if (key !== currentKey) {
+        groups.push({
+          startI: i,
+          endI: i,
+          label: fmtDay(meta.validTimes[i]!, tzOff),
+        });
+        currentKey = key;
+      } else {
+        groups[groups.length - 1]!.endI = i;
+      }
+    }
+    return groups;
+  }, [meta.validTimes, N, tzOff]);
+
+  // Which day group currently contains the scrubber? Used to bold its label.
+  const activeDayGroup = useMemo(() => {
+    const i = Math.floor(displayPos);
+    return dayGroups.findIndex((g) => i >= g.startI && i <= g.endI);
+  }, [dayGroups, displayPos]);
 
   const barW = innerW / Math.max(1, N);
 
@@ -336,38 +357,52 @@ export function PointChart({
             fill="#fff"
             pointerEvents="none"
           />
-          {/* x-axis labels: start / mid / end */}
-          {N >= 2 && (
-            <>
+          {/* Hour ticks — small marks above the day-name row */}
+          {hourTicks.map((t) => {
+            const x = PAD.left + (t.i + 0.5) * barW;
+            return (
+              <g key={`h${t.i}`}>
+                <line
+                  x1={x}
+                  x2={x}
+                  y1={PAD.top + innerH}
+                  y2={PAD.top + innerH + (t.isMidnight ? 5 : 3)}
+                  stroke={t.isMidnight ? "rgba(255,255,255,0.45)" : "rgba(255,255,255,0.25)"}
+                />
+                <text
+                  x={x}
+                  y={PAD.top + innerH + 14}
+                  fontSize={9}
+                  fill={t.isMidnight ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.5)"}
+                  textAnchor="middle"
+                >
+                  {t.hour}
+                </text>
+              </g>
+            );
+          })}
+          {/* Day labels — centered under each day's span */}
+          {dayGroups.map((g, gi) => {
+            const cx = PAD.left + ((g.startI + g.endI + 1) / 2) * barW;
+            const isActive = gi === activeDayGroup;
+            return (
               <text
-                x={PAD.left}
+                key={`d${gi}`}
+                x={cx}
                 y={HEIGHT - 4}
-                fontSize={9}
-                fill="rgba(255,255,255,0.5)"
-                textAnchor="start"
-              >
-                {fmtTime(meta.validTimes[0]!)}
-              </text>
-              <text
-                x={PAD.left + innerW / 2}
-                y={HEIGHT - 4}
-                fontSize={9}
-                fill="rgba(255,255,255,0.5)"
+                fontSize={10}
+                fontWeight={isActive ? 600 : 400}
+                fill={isActive ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.55)"}
                 textAnchor="middle"
               >
-                {fmtTime(meta.validTimes[Math.floor(N / 2)]!)}
+                {g.label}
               </text>
-              <text
-                x={PAD.left + innerW}
-                y={HEIGHT - 4}
-                fontSize={9}
-                fill="rgba(255,255,255,0.5)"
-                textAnchor="end"
-              >
-                {fmtTime(meta.validTimes[N - 1]!)}
-              </text>
-            </>
-          )}
+            );
+          })}
+          {/* Accessible full timestamp for first/last bars (screen-reader tooltip) */}
+          <title>
+            {`${fmtFullLocal(meta.validTimes[0]!, tzOff)} → ${fmtFullLocal(meta.validTimes[N - 1]!, tzOff)}`}
+          </title>
         </svg>
       )}
     </div>
