@@ -82,13 +82,18 @@ async function handleInit(msg: InitMsg): Promise<void> {
     const initTimes = Array.from(initData, (s) => Number(s) * 1000);
     const leadHoursMs = Array.from(leadData, (h) => h * 3600_000);
 
-    // Default to the most recent run.
+    // init_time is stored in arrival order, not sorted, so the "latest"
+    // is the index of the maximum timestamp — not the last array slot.
+    let latestStorageIdx = 0;
+    for (let i = 1; i < initTimes.length; i++) {
+      if (initTimes[i]! > initTimes[latestStorageIdx]!) latestStorageIdx = i;
+    }
     const initIdx =
       msg.initIdx !== undefined &&
       msg.initIdx >= 0 &&
       msg.initIdx < initTimes.length
         ? msg.initIdx
-        : initTimes.length - 1;
+        : latestStorageIdx;
     const initMs = initTimes[initIdx]!;
     const validTimes = leadHoursMs.map((dt) => initMs + dt);
 

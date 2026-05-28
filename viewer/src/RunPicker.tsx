@@ -44,15 +44,20 @@ export function RunPicker({ initTimes, selectedIdx, onSelect }: Props) {
 
   if (initTimes.length === 0) return null;
 
-  const latestIdx = initTimes.length - 1;
-  const isLatest = selectedIdx === latestIdx;
-  const now = initTimes[latestIdx]!;
+  // init_time is stored in arrival order, not sorted (see ingest spec).
+  // Sort by timestamp descending for display, mapping back to the original
+  // storage index so onSelect receives an index the worker can slice.
+  const sortedStorageIdx = initTimes
+    .map((_, i) => i)
+    .sort((a, b) => initTimes[b]! - initTimes[a]!);
+  const latestStorageIdx = sortedStorageIdx[0]!;
+  const isLatest = selectedIdx === latestStorageIdx;
+  const now = initTimes[latestStorageIdx]!;
   const limit = expanded
-    ? Math.min(MAX_TOTAL, initTimes.length)
-    : Math.min(MAX_VISIBLE, initTimes.length);
+    ? Math.min(MAX_TOTAL, sortedStorageIdx.length)
+    : Math.min(MAX_VISIBLE, sortedStorageIdx.length);
 
-  const visible: number[] = [];
-  for (let i = latestIdx; i >= 0 && visible.length < limit; i--) visible.push(i);
+  const visible: number[] = sortedStorageIdx.slice(0, limit);
 
   const sel = initTimes[selectedIdx]!;
   const label = isLatest
@@ -108,7 +113,7 @@ export function RunPicker({ initTimes, selectedIdx, onSelect }: Props) {
           {visible.map((i) => {
             const ts = initTimes[i]!;
             const isSel = i === selectedIdx;
-            const ageLabel = i === latestIdx ? "latest" : fmtAge(ts, now);
+            const ageLabel = i === latestStorageIdx ? "latest" : fmtAge(ts, now);
             return (
               <button
                 key={i}
