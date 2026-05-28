@@ -149,8 +149,7 @@ export function PointChart({
 
   const tzOff = tzOffsetHours(point.lon);
 
-  // Hour ticks at 06/12/18/00 in local solar time. On compact viewports drop
-  // to every 12 hours (00/12) to avoid label crowding.
+  // Hour ticks every 3h on desktop / every 6h on compact, to avoid label crowding.
   const hourStep = isCompact ? 6 : 3;
   const hourTicks = useMemo(() => {
     const ticks: { i: number; hour: string; isMidnight: boolean }[] = [];
@@ -364,7 +363,7 @@ export function PointChart({
           <text
             x={PAD.left}
             y={PAD.top + 8}
-            fontSize={9}
+            fontSize={10}
             fill="rgba(255,255,255,0.5)"
           >
             {maxVal}
@@ -391,7 +390,7 @@ export function PointChart({
                 <text
                   x={PAD.left + innerW + 4}
                   y={y + 3}
-                  fontSize={8}
+                  fontSize={10}
                   fill="rgba(255,255,255,0.55)"
                   textAnchor="start"
                 >
