@@ -16,6 +16,11 @@ import type { Texture } from "@luma.gl/core";
 import type { ShaderModule } from "@luma.gl/shadertools";
 import type { Frame } from "./useForecast.ts";
 
+// Bound the per-Frame GPU texture cache. At ~400 KB per r8unorm texture
+// (post-T2 quantization), 64 entries cap us at ~25 MB — comfortably more
+// than a typical 51-frame forecast, with headroom for run switches.
+const MAX_CACHED_FRAMES = 64;
+
 const FRAGMENT_SHADER = /* glsl */ `\
 #version 300 es
 #define SHADER_NAME pm25-layer-fragment-shader
@@ -134,11 +139,15 @@ export type Pm25LayerProps = Omit<BitmapLayerProps, "image"> & {
 };
 
 type Pm25LayerState = {
-  dataTexture?: Texture;
-  dataTextureB?: Texture;
+  /** Per-Frame GPU texture cache. Map insertion order tracks LRU; on hit
+   *  we re-insert to mark recency. Bounded by MAX_CACHED_FRAMES. */
+  frameTextures?: Map<Frame, Texture>;
+  /** Most recently shown frames per slot. Used purely as a fallback when
+   *  the requested frame for the next draw isn't loaded yet — keeps the
+   *  display from flashing to black instead of holding the last frame. */
+  lastShownA?: Frame;
+  lastShownB?: Frame;
   colormapTexture?: Texture;
-  lastUploadedA?: Frame;
-  lastUploadedB?: Frame;
   lastUploadedLut?: Uint8Array;
 };
 
@@ -173,20 +182,19 @@ export class Pm25Layer extends BitmapLayer<Pm25LayerProps> {
     super.updateState(params);
     // We don't need to react to most prop changes — draw() reads everything
     // it needs from this.props each frame. We DO need to invalidate cached
-    // texture state if image dimensions change.
+    // texture state if image dimensions change. (_getOrCreateFrameTexture
+    // also guards per-entry, but flushing here releases stale GPU memory
+    // immediately instead of waiting for each Frame to be re-requested.)
     const { props, oldProps } = params;
     if (
       props.imageWidth !== oldProps.imageWidth ||
       props.imageHeight !== oldProps.imageHeight
     ) {
-      this.state.dataTexture?.destroy();
-      this.state.dataTextureB?.destroy();
-      this.setState({
-        dataTexture: undefined,
-        dataTextureB: undefined,
-        lastUploadedA: undefined,
-        lastUploadedB: undefined,
-      });
+      const map = this.state.frameTextures;
+      if (map) {
+        for (const tex of map.values()) tex.destroy();
+        map.clear();
+      }
     }
   }
 
@@ -224,11 +232,11 @@ export class Pm25Layer extends BitmapLayer<Pm25LayerProps> {
     const tMix = position - idxA;
 
     // Pull frames from the cache. If a frame isn't ready, fall back to
-    // whatever was last uploaded so we never flash to black.
+    // whatever was last shown so we never flash to black.
     const requestedA = peekFrame(idxA);
     const requestedB = peekFrame(idxB);
-    const frameA = requestedA ?? this.state.lastUploadedA ?? null;
-    const frameB = requestedB ?? this.state.lastUploadedB ?? frameA;
+    const frameA = requestedA ?? this.state.lastShownA ?? null;
+    const frameB = requestedB ?? this.state.lastShownB ?? frameA;
 
     if (!frameA) {
       if (playing) this.setNeedsRedraw();
@@ -239,32 +247,30 @@ export class Pm25Layer extends BitmapLayer<Pm25LayerProps> {
     const frameAResolved = frameA;
     const frameBResolved = frameB ?? frameAResolved;
 
-    // Upload textures only when the *frame identity* changes (not every
-    // draw). The cache returns stable Frame references, so this naturally
-    // amortizes texture creation to ~once per integer crossing.
+    // Resolve textures via the per-Frame GPU cache. On a hit (the common
+    // case while scrubbing through already-loaded frames) this is a Map
+    // lookup with zero uploads. On a miss we allocate + copyImageData
+    // once, then the entry sticks around until LRU-evicted.
     //
-    // Mutate `this.state` directly — these are pure caches (texture
-    // identities + change-detection sentinels) that should not trigger
-    // deck.gl's updateState lifecycle. setState() inside draw() would
-    // schedule a redundant updateState the following tick.
-    if (frameAResolved !== this.state.lastUploadedA) {
-      this._uploadTexture("dataTexture", frameAResolved.data);
-      this.state.lastUploadedA = frameAResolved;
-    }
-    if (frameBResolved !== this.state.lastUploadedB) {
-      this._uploadTexture("dataTextureB", frameBResolved.data);
-      this.state.lastUploadedB = frameBResolved;
-    }
+    // When A and B reference the same Frame the Map returns the same
+    // Texture for both slots — no second upload, no duplication.
+    //
+    // Mutate `this.state` directly for the "last shown" sentinels — these
+    // are pure caches that should not trigger deck.gl's updateState
+    // lifecycle. setState() inside draw() would schedule a redundant
+    // updateState the following tick.
+    const dataTexture = this._getOrCreateFrameTexture(frameAResolved);
+    const dataTextureB = this._getOrCreateFrameTexture(frameBResolved);
+    this.state.lastShownA = frameAResolved;
+    this.state.lastShownB = frameBResolved;
+
     if (this.props.colormapLut !== this.state.lastUploadedLut) {
       this._uploadColormap(this.props.colormapLut);
       this.state.lastUploadedLut = this.props.colormapLut;
     }
 
-    const dataTexture = this.state.dataTexture!;
-    const dataTextureB = this.state.dataTextureB ?? dataTexture;
     const colormapTexture = this.state.colormapTexture;
     if (!colormapTexture) return;
-    const effectiveTMix = this.state.dataTextureB ? tMix : 0;
 
     model.shaderInputs.setProps({
       bitmap: {
@@ -282,7 +288,7 @@ export class Pm25Layer extends BitmapLayer<Pm25LayerProps> {
       pm25Blend: {
         bitmapTextureB: dataTextureB,
         colormapTexture,
-        tMix: effectiveTMix,
+        tMix,
       },
     });
     model.draw(this.context.renderPass);
@@ -291,36 +297,61 @@ export class Pm25Layer extends BitmapLayer<Pm25LayerProps> {
     if (playing) this.setNeedsRedraw();
   }
 
-  private _uploadTexture(
-    key: "dataTexture" | "dataTextureB",
-    data: Uint8Array,
-  ) {
+  /**
+   * Resolve a Frame to its GPU texture, allocating + uploading on miss.
+   * Touches the LRU on hit by re-inserting (Map iteration order = insertion
+   * order, so the oldest key is always the LRU). Evicts oldest entries
+   * when the cache exceeds MAX_CACHED_FRAMES.
+   *
+   * Dimension changes (forecast switched to a different grid) destroy the
+   * stale texture for this Frame and reallocate at the current size — but
+   * normally updateState() flushes the whole cache when imageWidth/Height
+   * change, so this fallback only matters if a Frame somehow outlives the
+   * grid switch with the wrong texture still attached.
+   */
+  private _getOrCreateFrameTexture(frame: Frame): Texture {
     const { imageWidth, imageHeight } = this.props;
-    if (!imageWidth || !imageHeight) return;
-    const { device } = this.context;
-    let texture = this.state[key];
-    // Re-use the texture when dimensions haven't changed — avoids the
-    // GPU alloc/dealloc churn of destroy+create at every frame swap.
-    if (
-      !texture ||
-      texture.width !== imageWidth ||
-      texture.height !== imageHeight
-    ) {
-      texture?.destroy();
-      texture = device.createTexture({
-        width: imageWidth,
-        height: imageHeight,
-        format: "r8unorm",
-        sampler: {
-          minFilter: "nearest",
-          magFilter: "nearest",
-          addressModeU: "clamp-to-edge",
-          addressModeV: "clamp-to-edge",
-        },
-      });
-      this.state[key] = texture;
+    let map = this.state.frameTextures;
+    if (!map) {
+      map = new Map<Frame, Texture>();
+      this.state.frameTextures = map;
     }
-    texture.copyImageData({ data });
+    let tex = map.get(frame);
+    if (tex && tex.width === imageWidth && tex.height === imageHeight) {
+      // Re-insert to move to end of insertion order (touch for LRU).
+      map.delete(frame);
+      map.set(frame, tex);
+      return tex;
+    }
+    if (tex) {
+      // Dimensions changed. Discard and re-create at the new grid size.
+      tex.destroy();
+      map.delete(frame);
+    }
+    // Evict LRU entries until we're under the cap.
+    while (map.size >= MAX_CACHED_FRAMES) {
+      const oldestKey = map.keys().next().value;
+      if (oldestKey === undefined) break;
+      const oldestTex = map.get(oldestKey);
+      oldestTex?.destroy();
+      map.delete(oldestKey);
+    }
+    // Allocate + upload.
+    const { device } = this.context;
+    tex = device.createTexture({
+      width: imageWidth,
+      height: imageHeight,
+      format: "r8unorm",
+      sampler: {
+        minFilter: "nearest",
+        magFilter: "nearest",
+        addressModeU: "clamp-to-edge",
+        addressModeV: "clamp-to-edge",
+      },
+    });
+    tex.copyImageData({ data: frame.data });
+    map.set(frame, tex);
+    return tex;
   }
 
   private _uploadColormap(lut: Uint8Array) {
@@ -345,8 +376,11 @@ export class Pm25Layer extends BitmapLayer<Pm25LayerProps> {
   }
 
   override finalizeState(context: Parameters<BitmapLayer["finalizeState"]>[0]) {
-    this.state.dataTexture?.destroy();
-    this.state.dataTextureB?.destroy();
+    const map = this.state.frameTextures;
+    if (map) {
+      for (const tex of map.values()) tex.destroy();
+      map.clear();
+    }
     this.state.colormapTexture?.destroy();
     super.finalizeState(context);
   }
