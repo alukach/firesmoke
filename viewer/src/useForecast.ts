@@ -47,7 +47,7 @@ type State =
 
 const PREFETCH_CONCURRENCY = 6;
 
-export function useForecast(zarrUrl: string): State {
+export function useForecast(zarrUrl: string, runIdx?: number): State {
   const [state, setState] = useState<State>({ status: "loading" });
   const [progress, setProgress] = useState<PrefetchProgress>({
     loaded: 0,
@@ -120,7 +120,7 @@ export function useForecast(zarrUrl: string): State {
       }
     };
 
-    worker.postMessage({ type: "init", zarrUrl });
+    worker.postMessage({ type: "init", zarrUrl, initIdx: runIdx });
 
     (async () => {
       try {
@@ -251,7 +251,7 @@ export function useForecast(zarrUrl: string): State {
         rejectInit(err);
       }
     };
-  }, [zarrUrl]);
+  }, [zarrUrl, runIdx]);
 
   if (state.status === "ready") {
     return { ...state, prefetchProgress: progress, framesVersion };

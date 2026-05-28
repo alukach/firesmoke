@@ -5,7 +5,7 @@ import * as zarr from "zarrita";
 
 declare const self: DedicatedWorkerGlobalScope;
 
-type InitMsg = { type: "init"; zarrUrl: string };
+type InitMsg = { type: "init"; zarrUrl: string; initIdx?: number };
 type LoadMsg = { type: "load"; reqId: number; physIdx: number };
 type InMsg = InitMsg | LoadMsg;
 
@@ -83,7 +83,12 @@ async function handleInit(msg: InitMsg): Promise<void> {
     const leadHoursMs = Array.from(leadData, (h) => h * 3600_000);
 
     // Default to the most recent run.
-    const initIdx = initTimes.length - 1;
+    const initIdx =
+      msg.initIdx !== undefined &&
+      msg.initIdx >= 0 &&
+      msg.initIdx < initTimes.length
+        ? msg.initIdx
+        : initTimes.length - 1;
     const initMs = initTimes[initIdx]!;
     const validTimes = leadHoursMs.map((dt) => initMs + dt);
 
