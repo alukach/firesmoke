@@ -122,18 +122,10 @@ export function colorAt(palette: Palette, pm25: number): string {
   return `rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(3)})`;
 }
 
-/** Bar color, adapted to read legibly as text on a dark background.
- * Strips the LUT alpha and lifts low-luminance colors toward white
- * so high-end EPA categories (V.Unhealthy, Hazardous) don't disappear
- * against the PointChart drawer's dark gradient. */
-export function categoryTextColor(palette: Palette, pm25: number): string {
+/** Bar color stripped of LUT alpha, for use as text on a light pill background. */
+export function categoryColor(palette: Palette, pm25: number): string {
   const [r, g, b] = interpStops(palette.stops, pm25);
-  const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-  const LUM_FLOOR = 150;
-  if (lum >= LUM_FLOOR) return `rgb(${r}, ${g}, ${b})`;
-  const t = (LUM_FLOOR - lum) / LUM_FLOOR;
-  const lift = (c: number) => Math.round(c + (255 - c) * t);
-  return `rgb(${lift(r)}, ${lift(g)}, ${lift(b)})`;
+  return `rgb(${r}, ${g}, ${b})`;
 }
 
 /** EPA AQI category for a PM2.5 value (µg/m³). Thresholds match EPA_AQI_STOPS. */
