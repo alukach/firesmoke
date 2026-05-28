@@ -203,7 +203,10 @@ export default function App() {
               playbackRef={playbackRef}
               onSeek={seek}
               onClose={() => setSelectedPoint(null)}
-              isLatest={state.meta.selectedIdx === state.meta.initTimes.length - 1}
+              isLatest={
+                state.meta.initTimes[state.meta.selectedIdx]! ===
+                Math.max(...state.meta.initTimes)
+              }
               selectedInitTime={state.meta.initTimes[state.meta.selectedIdx]!}
             />
           )}

@@ -99,7 +99,8 @@ export function PointChart({
   // JS-side echo of the CSS clamp(220px, 30vh, 360px) on the drawer wrapper.
   // SVG's height attribute doesn't honor CSS clamp(), so we mirror it here.
   const drawerH = Math.max(220, Math.min(360, vh * 0.3));
-  const chartH = drawerH - HEADER_HEIGHT - 12;
+  const bannerH = isLatest ? 0 : 28;
+  const chartH = drawerH - HEADER_HEIGHT - 12 - bannerH;
   const chartW = vw - SIDE_GUTTER * 2;
   const innerW = chartW - PAD.left - PAD.right;
   const innerH = chartH - PAD.top - PAD.bottom;
