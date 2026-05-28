@@ -33,7 +33,8 @@ function readPointFromUrl(): SelectedPoint | null {
 }
 
 export default function App() {
-  const state = useForecast(ZARR_URL);
+  const [runIdx, setRunIdx] = useState<number | undefined>(undefined);
+  const state = useForecast(ZARR_URL, runIdx);
   const [playback, setPlayback] = useState<PlaybackState>(initialPlayback);
   const [paletteId, setPaletteId] = useState<PaletteId>("firesmoke");
   const palette = PALETTES[paletteId]!;
@@ -204,6 +205,9 @@ export default function App() {
             prefetchAll={state.prefetchAll}
             prefetchProgress={state.prefetchProgress}
             peekFrame={state.peekFrame}
+            initTimes={state.meta.initTimes}
+            selectedRunIdx={state.meta.selectedIdx}
+            onRunSelect={setRunIdx}
           />
         </>
       )}

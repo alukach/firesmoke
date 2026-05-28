@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { currentPosition, SPEEDS, type PlaybackState, type Speed } from "./playback.ts";
+import { RunPicker } from "./RunPicker.tsx";
 import type { ForecastMeta, Frame, PrefetchProgress } from "./useForecast.ts";
 import { useIsCompact } from "./useResponsive.ts";
 
@@ -56,6 +57,9 @@ type Props = {
   prefetchAll: () => Promise<void>;
   prefetchProgress: PrefetchProgress;
   peekFrame: (idx: number) => Frame | null;
+  initTimes: number[];
+  selectedRunIdx: number;
+  onRunSelect: (idx: number) => void;
 };
 
 export function Controls({
@@ -69,6 +73,9 @@ export function Controls({
   prefetchAll,
   prefetchProgress,
   peekFrame,
+  initTimes,
+  selectedRunIdx,
+  onRunSelect,
 }: Props) {
   const isCompact = useIsCompact();
   const N = meta.validTimes.length;
@@ -240,6 +247,13 @@ export function Controls({
               compact={isCompact}
             />
           </div>
+          <div>
+            <RunPicker
+              initTimes={initTimes}
+              selectedIdx={selectedRunIdx}
+              onSelect={onRunSelect}
+            />
+          </div>
           {slider}
         </div>
       ) : (
@@ -256,6 +270,11 @@ export function Controls({
             value={playback.speed}
             onChange={onSpeedChange}
             compact={isCompact}
+          />
+          <RunPicker
+            initTimes={initTimes}
+            selectedIdx={selectedRunIdx}
+            onSelect={onRunSelect}
           />
           {slider}
         </div>
