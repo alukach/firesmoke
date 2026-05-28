@@ -4,17 +4,10 @@ import { currentPosition, type PlaybackState } from "./playback.ts";
 import type { ForecastMeta, Frame } from "./useForecast.ts";
 import { useIsCompact, useViewportWidth } from "./useResponsive.ts";
 
-const MAX_WIDTH = 380;
-const HEIGHT = 148;
-const PAD = { top: 8, right: 56, bottom: 36, left: 10 };
+const PAD = { top: 8, right: 76, bottom: 38, left: 12 };
 const DISPLAY_HZ = 10;
-// Reserve horizontal space at the edge of the viewport so the card never
-// touches the screen edge.
-const SIDE_MARGIN = 24;
-// Vertical clearance below the PaletteCard, which is pinned to the same
-// top-right corner.
-const PALETTE_CARD_CLEARANCE = 110;
-const PALETTE_CARD_CLEARANCE_COMPACT = 96;
+const SIDE_GUTTER = 16;
+const HEADER_HEIGHT = 28;
 
 export type SelectedPoint = { lat: number; lon: number };
 
@@ -82,13 +75,13 @@ export function PointChart({
   const N = meta.validTimes.length;
   const isCompact = useIsCompact();
   const vw = useViewportWidth();
-  // PointChart sits below the PaletteCard on the right edge, so it has the
-  // full right-side column to itself. Cap at MAX_WIDTH on desktop.
-  const chartW = isCompact
-    ? Math.max(220, vw - SIDE_MARGIN * 2)
-    : Math.min(MAX_WIDTH, vw - SIDE_MARGIN * 2);
+  // JS-side echo of the CSS clamp(220px, 30vh, 360px) on the drawer wrapper.
+  // SVG's height attribute doesn't honor CSS clamp(), so we mirror it here.
+  const drawerH = Math.max(220, Math.min(360, window.innerHeight * 0.3));
+  const chartH = drawerH - HEADER_HEIGHT - 12;
+  const chartW = vw - SIDE_GUTTER * 2;
   const innerW = chartW - PAD.left - PAD.right;
-  const innerH = HEIGHT - PAD.top - PAD.bottom;
+  const innerH = chartH - PAD.top - PAD.bottom;
 
   // Sample the time series at the nearest grid cell.
   // framesVersion bumps once per frame as prefetch streams in, so we
@@ -237,22 +230,22 @@ export function PointChart({
     <div
       style={{
         position: "absolute",
-        top: isCompact ? PALETTE_CARD_CLEARANCE_COMPACT : PALETTE_CARD_CLEARANCE,
-        right: 12,
-        padding: "10px 12px 8px",
-        background: "rgba(0, 0, 0, 0.78)",
+        bottom: "var(--controls-height, 0px)",
+        left: 0,
+        right: 0,
+        padding: `12px ${SIDE_GUTTER}px 12px ${SIDE_GUTTER}px`,
+        background:
+          "linear-gradient(to top, rgba(0,0,0,0.78), rgba(0,0,0,0.55))",
         color: "#eee",
-        borderRadius: 6,
         fontSize: 12,
-        boxShadow: "0 2px 6px rgba(0, 0, 0, 0.4)",
+        boxShadow: "0 -2px 8px rgba(0, 0, 0, 0.35)",
         pointerEvents: "auto",
-        // Stack explicitly above the map (and the smoke layer rendered
-        // by deck.gl's MapboxOverlay) regardless of DOM order.
         zIndex: 10,
         display: "flex",
         flexDirection: "column",
-        gap: 4,
-        width: chartW + 24,
+        gap: 6,
+        height: "clamp(220px, 30vh, 360px)",
+        boxSizing: "border-box",
       }}
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
@@ -314,7 +307,7 @@ export function PointChart({
         <svg
           ref={svgRef}
           width={chartW}
-          height={HEIGHT}
+          height={chartH}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={stopDragging}
@@ -442,7 +435,7 @@ export function PointChart({
               <text
                 key={`d${gi}`}
                 x={cx}
-                y={HEIGHT - 4}
+                y={chartH - 4}
                 fontSize={10}
                 fontWeight={isActive ? 600 : 400}
                 fill={isActive ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.55)"}
