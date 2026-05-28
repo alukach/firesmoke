@@ -248,8 +248,53 @@ export function PointChart({
         boxSizing: "border-box",
       }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-        <div style={{ fontWeight: 600 }}>{fmtCoord(point.lat, point.lon)}</div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          minHeight: HEADER_HEIGHT,
+          flexWrap: "wrap",
+          rowGap: 4,
+        }}
+      >
+        <div style={{ fontWeight: 600, fontSize: 13 }}>
+          {fmtCoord(point.lat, point.lon)}
+        </div>
+        <div
+          style={{
+            flex: 1,
+            display: "flex",
+            gap: 12,
+            justifyContent: "flex-end",
+            alignItems: "baseline",
+            flexWrap: "wrap",
+            rowGap: 4,
+            fontSize: 12,
+            opacity: 0.75,
+          }}
+        >
+          <span>PM2.5 (µg/m³)</span>
+          <span>
+            now:{" "}
+            <span style={{ color: "#fff", fontWeight: 600 }}>
+              {scrubVal === null ? "—" : scrubVal.toFixed(1)}
+            </span>
+            {scrubVal !== null && (
+              <>
+                {" "}—{" "}
+                <span
+                  style={{
+                    color: colorAt(palette, scrubVal),
+                    fontWeight: 600,
+                  }}
+                >
+                  {pmCategory(scrubVal, isCompact)}
+                </span>
+              </>
+            )}
+          </span>
+        </div>
         <button
           onClick={onClose}
           title="Close"
@@ -259,7 +304,7 @@ export function PointChart({
             color: "#eee",
             border: "none",
             cursor: "pointer",
-            fontSize: 16,
+            fontSize: 18,
             padding: 0,
             lineHeight: 1,
             opacity: 0.6,
@@ -267,37 +312,6 @@ export function PointChart({
         >
           ×
         </button>
-      </div>
-      <div
-        style={{
-          fontSize: 11,
-          opacity: 0.65,
-          display: "flex",
-          justifyContent: "space-between",
-          flexWrap: "wrap",
-          columnGap: 8,
-        }}
-      >
-        <span>PM2.5 (µg/m³)</span>
-        <span>
-          now:{" "}
-          <span style={{ color: "#fff", fontWeight: 600 }}>
-            {scrubVal === null ? "—" : scrubVal.toFixed(1)}
-          </span>
-          {scrubVal !== null && (
-            <>
-              {" "}—{" "}
-              <span
-                style={{
-                  color: colorAt(palette, scrubVal),
-                  fontWeight: 600,
-                }}
-              >
-                {pmCategory(scrubVal, isCompact)}
-              </span>
-            </>
-          )}
-        </span>
       </div>
       {!inBounds ? (
         <div style={{ padding: "16px 0", textAlign: "center", opacity: 0.7 }}>
