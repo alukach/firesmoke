@@ -142,6 +142,16 @@ export function PointChart({
     return () => window.clearTimeout(id);
   }, []);
 
+  // Esc to close. Mounted only while the drawer is open, so we don't
+  // intercept the key when no chart is visible.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   // Live scrubber position (separate state, throttled to 10Hz while playing).
   const [displayPos, setDisplayPos] = useState(() =>
     currentPosition(playback, N),
