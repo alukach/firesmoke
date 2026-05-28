@@ -30,8 +30,9 @@ type OutMsg =
     }
   | { type: "error"; reqId?: number; error: string };
 
-let pm25Latest: zarr.Array<zarr.NumberDataType, zarr.Readable> | null = null;
+let pm25Runs: zarr.Array<zarr.NumberDataType, zarr.Readable> | null = null;
 let initTimesAll: number[] = [];
+let selectedInitIdx = 0;
 
 // Schemas the viewer knows how to read. Bump when the store layout
 // changes in an incompatible way; the ingest writes `schema_version`
@@ -57,35 +58,41 @@ async function handleInit(msg: InitMsg): Promise<void> {
       );
     }
 
-    const [latestArr, latArr, lonArr, vtArr, liArr] = await Promise.all([
-      zarr.open(group.resolve("PM25_latest"), { kind: "array" }),
+    const [runsArr, latArr, lonArr, iArr, lhArr] = await Promise.all([
+      zarr.open(group.resolve("PM25_runs"), { kind: "array" }),
       zarr.open(group.resolve("lat"), { kind: "array" }),
       zarr.open(group.resolve("lon"), { kind: "array" }),
-      zarr.open(group.resolve("valid_time"), { kind: "array" }),
-      zarr.open(group.resolve("latest_init_time"), { kind: "array" }),
+      zarr.open(group.resolve("init_time"), { kind: "array" }),
+      zarr.open(group.resolve("lead_hour"), { kind: "array" }),
     ]);
 
-    const [lat, lon, vt, li] = await Promise.all([
+    const [lat, lon, iv, lh] = await Promise.all([
       zarr.get(latArr as zarr.Array<zarr.NumberDataType, zarr.Readable>),
       zarr.get(lonArr as zarr.Array<zarr.NumberDataType, zarr.Readable>),
-      zarr.get(vtArr as zarr.Array<zarr.NumberDataType, zarr.Readable>),
-      zarr.get(liArr as zarr.Array<zarr.NumberDataType, zarr.Readable>),
+      zarr.get(iArr as zarr.Array<zarr.NumberDataType, zarr.Readable>),
+      zarr.get(lhArr as zarr.Array<zarr.NumberDataType, zarr.Readable>),
     ]);
 
     const latData = lat.data as Float64Array;
     const lonData = lon.data as Float64Array;
-    const vtData = vt.data as unknown as BigInt64Array;
-    const liData = li.data as unknown as BigInt64Array;
+    const initData = iv.data as unknown as BigInt64Array;
+    const leadData = lh.data as Int32Array;
 
-    const validTimes = Array.from(vtData, (s) => Number(s) * 1000);
-    const initTimes = Array.from(liData, (s) => Number(s) * 1000);
+    const initTimes = Array.from(initData, (s) => Number(s) * 1000);
+    const leadHoursMs = Array.from(leadData, (h) => h * 3600_000);
 
-    pm25Latest = latestArr as zarr.Array<zarr.NumberDataType, zarr.Readable>;
+    // Default to the most recent run.
+    const initIdx = initTimes.length - 1;
+    const initMs = initTimes[initIdx]!;
+    const validTimes = leadHoursMs.map((dt) => initMs + dt);
+
+    pm25Runs = runsArr as zarr.Array<zarr.NumberDataType, zarr.Readable>;
     initTimesAll = initTimes;
+    selectedInitIdx = initIdx;
 
     const meta: InitMeta = {
       validTimes,
-      initTimes,
+      initTimes: [initMs],
       lat: latData,
       lon: lonData,
       width: lonData.length,
@@ -105,7 +112,7 @@ async function handleInit(msg: InitMsg): Promise<void> {
 }
 
 async function handleLoad(msg: LoadMsg): Promise<void> {
-  if (!pm25Latest) {
+  if (!pm25Runs) {
     const out: OutMsg = {
       type: "error",
       reqId: msg.reqId,
@@ -115,7 +122,12 @@ async function handleLoad(msg: LoadMsg): Promise<void> {
     return;
   }
   try {
-    const result = await zarr.get(pm25Latest, [msg.physIdx, null, null]);
+    const result = await zarr.get(pm25Runs, [
+      selectedInitIdx,
+      msg.physIdx,
+      null,
+      null,
+    ]);
     const data = result.data as Float32Array;
 
     let maxPm25 = 0;
@@ -130,7 +142,7 @@ async function handleLoad(msg: LoadMsg): Promise<void> {
       physIdx: msg.physIdx,
       data,
       maxPm25,
-      initTime: initTimesAll[msg.physIdx]!,
+      initTime: initTimesAll[selectedInitIdx]!,
     };
     self.postMessage(out, [data.buffer]);
   } catch (err) {
