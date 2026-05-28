@@ -173,8 +173,15 @@ export function Controls({
           max={Math.max(0, N - 1)}
           step={0.01}
           value={displayPos}
-          onPointerDown={() => {
+          onPointerDown={(e) => {
             draggingRef.current = true;
+            // Explicit capture so onPointerUp fires even if the user
+            // releases outside the slider element.
+            try {
+              e.currentTarget.setPointerCapture(e.pointerId);
+            } catch {
+              /* capture failed (e.g. test env); drag still works */
+            }
           }}
           onPointerUp={() => {
             draggingRef.current = false;
