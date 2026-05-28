@@ -64,6 +64,9 @@ export function useForecast(zarrUrl: string, runIdx?: number): State {
       number,
       { resolve: (f: Frame) => void; reject: (e: Error) => void }
     >();
+    // Bound by the inner async IIFE so we can cancel a pending rAF on
+    // cleanup. The flush itself is a no-op after `cancelled` flips.
+    let rafScheduledRef: (() => number) | null = null;
 
     // Single message router. init-result resolves the init promise;
     // load-result/error reach the pending map; unsolicited errors flip
@@ -162,6 +165,35 @@ export function useForecast(zarrUrl: string, runIdx?: number): State {
           });
         };
 
+        // Coalesce per-frame state bumps to one commit per animation frame.
+        // 6 concurrent prefetches resolving in the same ~16ms window used
+        // to fire 6 separate React commits; now they collapse into one.
+        const total = sortedValidTimes.length;
+        let pendingVersionBumps = 0;
+        let pendingLoadedBumps = 0;
+        let rafScheduled = 0;
+        const flushBumps = () => {
+          rafScheduled = 0;
+          if (pendingVersionBumps > 0) {
+            const n = pendingVersionBumps;
+            pendingVersionBumps = 0;
+            setFramesVersion((v) => v + n);
+          }
+          if (pendingLoadedBumps > 0) {
+            const n = pendingLoadedBumps;
+            pendingLoadedBumps = 0;
+            setProgress((prev) => {
+              const next = prev.loaded + n;
+              return { loaded: next, total, inFlight: next < total };
+            });
+          }
+        };
+        const scheduleFlush = () => {
+          if (rafScheduled !== 0) return;
+          rafScheduled = requestAnimationFrame(flushBumps);
+        };
+        rafScheduledRef = () => rafScheduled;
+
         const getFrame = (sortedI: number): Promise<Frame> => {
           const cached = cache.get(sortedI);
           if (cached) return Promise.resolve(cached);
@@ -171,14 +203,13 @@ export function useForecast(zarrUrl: string, runIdx?: number): State {
           const p = requestFrame(physIdx).then((f) => {
             cache.set(sortedI, f);
             inflight.delete(sortedI);
-            setFramesVersion((v) => v + 1);
+            pendingVersionBumps += 1;
+            scheduleFlush();
             return f;
           });
           inflight.set(sortedI, p);
           return p;
         };
-
-        const total = sortedValidTimes.length;
 
         const prefetchAll = async (): Promise<void> => {
           if (cache.size >= total) return;
@@ -198,20 +229,27 @@ export function useForecast(zarrUrl: string, runIdx?: number): State {
                 // getFrame is re-invoked). We still want the progress
                 // bar to advance so the UI doesn't appear stuck.
               }
-              // Functional update — concurrent workers' setProgress calls
-              // would otherwise race on a closure-shared `loaded` counter.
-              setProgress((prev) => {
-                const next = prev.loaded + 1;
-                return { loaded: next, total, inFlight: next < total };
-              });
+              pendingLoadedBumps += 1;
+              scheduleFlush();
             }
           };
           await Promise.allSettled(
             Array.from({ length: PREFETCH_CONCURRENCY }, workerFn),
           );
-          // Use the actual cache size — workerFn-driven loaded counter
-          // could over- or under-count if a frame got cached by a parallel
-          // getFrame call in flight.
+          // Flush any pending bump synchronously so the "done" state below
+          // reflects every loaded frame, then publish the final terminal
+          // state directly. cancelAnimationFrame on the scheduled flush
+          // (if any) avoids a stale rAF firing after our final write.
+          if (rafScheduled !== 0) {
+            cancelAnimationFrame(rafScheduled);
+            rafScheduled = 0;
+          }
+          if (pendingVersionBumps > 0) {
+            const n = pendingVersionBumps;
+            pendingVersionBumps = 0;
+            setFramesVersion((v) => v + n);
+          }
+          pendingLoadedBumps = 0;
           setProgress({ loaded: cache.size, total, inFlight: false });
         };
 
@@ -250,6 +288,10 @@ export function useForecast(zarrUrl: string, runIdx?: number): State {
         initSettled = true;
         rejectInit(err);
       }
+      // Cancel a pending rAF flush so it doesn't run setState after
+      // we've torn down (React 18 would warn about it).
+      const handle = rafScheduledRef?.() ?? 0;
+      if (handle !== 0) cancelAnimationFrame(handle);
     };
   }, [zarrUrl, runIdx]);
 

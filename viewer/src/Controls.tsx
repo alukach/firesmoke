@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useRef, useState } from "react";
+import { memo, startTransition, useEffect, useRef, useState } from "react";
 import { currentPosition, SPEEDS, type PlaybackState, type Speed } from "./playback.ts";
 import { RunPicker } from "./RunPicker.tsx";
 import type { ForecastMeta, Frame, PrefetchProgress } from "./useForecast.ts";
@@ -62,7 +62,7 @@ type Props = {
   onRunSelect: (idx: number) => void;
 };
 
-export function Controls({
+function ControlsImpl({
   meta,
   playback,
   playbackRef,
@@ -444,3 +444,10 @@ function PrefetchBar({ pct, done }: { pct: number; done: boolean }) {
     </div>
   );
 }
+
+// Wrap so prefetch-triggered re-renders of App (framesVersion,
+// prefetchProgress, selectedPoint) don't unconditionally re-render the
+// whole control strip when its own props are unchanged. peekFrame and
+// onSeek/onPlay/onPause are stable across renders; prefetchProgress
+// gets new object identities but is rAF-throttled in useForecast.
+export const Controls = memo(ControlsImpl);
