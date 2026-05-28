@@ -322,6 +322,37 @@ export function PointChart({
           >
             {maxVal}
           </text>
+          {/* EPA AQI thresholds — dashed lines + category labels */}
+          {[
+            { pm: 12, label: "Moderate" },
+            { pm: 35, label: "Sensitive" },
+            { pm: 55, label: "Unhealthy" },
+            { pm: 150, label: "Very Unhealthy" },
+          ].map((t) => {
+            if (t.pm > maxVal) return null;
+            const y = PAD.top + innerH - (t.pm / maxVal) * innerH;
+            return (
+              <g key={`t${t.pm}`}>
+                <line
+                  x1={PAD.left}
+                  x2={PAD.left + innerW}
+                  y1={y}
+                  y2={y}
+                  stroke="rgba(255,255,255,0.18)"
+                  strokeDasharray="2 3"
+                />
+                <text
+                  x={PAD.left + innerW + 4}
+                  y={y + 3}
+                  fontSize={8}
+                  fill="rgba(255,255,255,0.55)"
+                  textAnchor="start"
+                >
+                  {t.label}
+                </text>
+              </g>
+            );
+          })}
           {/* bars */}
           {series.map((v, i) => {
             if (v === null) return null;
