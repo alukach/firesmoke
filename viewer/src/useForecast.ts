@@ -5,6 +5,7 @@ import ForecastWorker from "./worker.ts?worker";
 export type ForecastMeta = {
   validTimes: number[];
   initTimes: number[];
+  selectedIdx: number;
   latMin: number;
   latMax: number;
   lonMin: number;
@@ -130,11 +131,11 @@ export function useForecast(zarrUrl: string): State {
           (a, b) => initMeta.validTimes[a]! - initMeta.validTimes[b]!,
         );
         const sortedValidTimes = sortedIdx.map((i) => initMeta.validTimes[i]!);
-        const sortedInitTimes = sortedIdx.map((i) => initMeta.initTimes[i]!);
 
         const meta: ForecastMeta = {
           validTimes: sortedValidTimes,
-          initTimes: sortedInitTimes,
+          initTimes: initMeta.initTimes,
+          selectedIdx: initMeta.selectedIdx,
           latMin: initMeta.lat[0]!,
           latMax: initMeta.lat[initMeta.lat.length - 1]!,
           lonMin: initMeta.lon[0]!,

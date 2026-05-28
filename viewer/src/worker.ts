@@ -11,7 +11,8 @@ type InMsg = InitMsg | LoadMsg;
 
 type InitMeta = {
   validTimes: number[];     // ms since epoch (in store order, not sorted)
-  initTimes: number[];      // ms since epoch
+  initTimes: number[];      // ms since epoch — full init_time array, all runs
+  selectedIdx: number;      // index into initTimes of the currently-loaded run
   lat: Float64Array;
   lon: Float64Array;
   width: number;            // n_lon
@@ -92,7 +93,8 @@ async function handleInit(msg: InitMsg): Promise<void> {
 
     const meta: InitMeta = {
       validTimes,
-      initTimes: [initMs],
+      initTimes,
+      selectedIdx: initIdx,
       lat: latData,
       lon: lonData,
       width: lonData.length,
