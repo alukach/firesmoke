@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { currentPosition, SPEEDS, type PlaybackState, type Speed } from "./playback.ts";
 import type { ForecastMeta, Frame, PrefetchProgress } from "./useForecast.ts";
 import { useIsCompact } from "./useResponsive.ts";
@@ -137,6 +137,25 @@ export function Controls({
   const headlineFs = isCompact ? 15 : 17;
   const subFs = isCompact ? 13 : 14;
 
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const update = () => {
+      document.documentElement.style.setProperty(
+        "--controls-height",
+        `${el.offsetHeight}px`,
+      );
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      document.documentElement.style.removeProperty("--controls-height");
+    };
+  }, []);
+
   const slider = (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
       <div style={{ position: "relative" }}>
@@ -197,6 +216,7 @@ export function Controls({
 
   return (
     <div
+      ref={rootRef}
       style={{
         position: "absolute",
         bottom: 0,
