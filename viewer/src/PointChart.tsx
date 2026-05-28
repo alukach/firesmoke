@@ -1,5 +1,5 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { colorAt, pmCategory, type Palette } from "./colormap.ts";
+import { categoryTextColor, colorAt, pmCategory, type Palette } from "./colormap.ts";
 import { currentPosition, type PlaybackState } from "./playback.ts";
 import type { ForecastMeta, Frame } from "./useForecast.ts";
 import { useIsCompact, useViewportHeight, useViewportWidth } from "./useResponsive.ts";
@@ -302,7 +302,7 @@ export function PointChart({
                 {" "}—{" "}
                 <span
                   style={{
-                    color: colorAt(palette, scrubVal),
+                    color: categoryTextColor(palette, scrubVal),
                     fontWeight: 600,
                   }}
                 >
