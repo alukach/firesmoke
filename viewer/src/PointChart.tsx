@@ -2,7 +2,7 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { colorAt, pmCategory, type Palette } from "./colormap.ts";
 import { currentPosition, type PlaybackState } from "./playback.ts";
 import type { ForecastMeta, Frame } from "./useForecast.ts";
-import { useIsCompact, useViewportWidth } from "./useResponsive.ts";
+import { useIsCompact, useViewportHeight, useViewportWidth } from "./useResponsive.ts";
 
 const PAD = { top: 8, right: 76, bottom: 38, left: 12 };
 const DISPLAY_HZ = 10;
@@ -80,9 +80,10 @@ export function PointChart({
   const N = meta.validTimes.length;
   const isCompact = useIsCompact();
   const vw = useViewportWidth();
+  const vh = useViewportHeight();
   // JS-side echo of the CSS clamp(220px, 30vh, 360px) on the drawer wrapper.
   // SVG's height attribute doesn't honor CSS clamp(), so we mirror it here.
-  const drawerH = Math.max(220, Math.min(360, window.innerHeight * 0.3));
+  const drawerH = Math.max(220, Math.min(360, vh * 0.3));
   const chartH = drawerH - HEADER_HEIGHT - 12;
   const chartW = vw - SIDE_GUTTER * 2;
   const innerW = chartW - PAD.left - PAD.right;

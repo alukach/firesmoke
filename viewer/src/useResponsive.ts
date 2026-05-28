@@ -38,3 +38,24 @@ export function useViewportWidth(): number {
   }, []);
   return w;
 }
+
+/** Current window inner height, throttled to animation frames. */
+export function useViewportHeight(): number {
+  const [h, setH] = useState(() =>
+    typeof window !== "undefined" ? window.innerHeight : 768,
+  );
+  useEffect(() => {
+    let raf = 0;
+    const handler = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => setH(window.innerHeight));
+    };
+    window.addEventListener("resize", handler);
+    handler();
+    return () => {
+      window.removeEventListener("resize", handler);
+      cancelAnimationFrame(raf);
+    };
+  }, []);
+  return h;
+}
